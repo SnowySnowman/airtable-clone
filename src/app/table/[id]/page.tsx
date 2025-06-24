@@ -1,33 +1,39 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useParams } from 'next/navigation';
-import { api } from "~/trpc/react";
+import { api } from '~/trpc/react';
 import {
   useReactTable,
   getCoreRowModel,
   flexRender,
 } from '@tanstack/react-table';
+import type { ColumnDef } from '@tanstack/react-table';
 import { useMemo } from 'react';
+
+// Type for a row of table data
+type TableRow = {
+  id: string;
+  [key: string]: string | number;
+};
 
 export default function TablePage() {
   const params = useParams();
-  const tableId = params.id as string;
+  const tableId = params?.id as string;
 
   const { data: table, isLoading } = api.table.getTableById.useQuery({ tableId });
 
   const updateCell = api.table.updateCell.useMutation();
 
-  const columns = useMemo(() => {
+  const columns = useMemo<ColumnDef<TableRow>[]>(() => {
     if (!table) return [];
 
     return table.columns.map((col) => ({
       accessorKey: col.id,
       header: col.name,
-      cell: ({ getValue, row, column }: any) => (
+      cell: ({ getValue, row, column }) => (
         <input
           className="border px-2 py-1 w-full"
-          defaultValue={getValue()}
+          defaultValue={getValue() as string}
           onBlur={(e) => {
             updateCell.mutate({
               tableId,
@@ -39,20 +45,19 @@ export default function TablePage() {
         />
       ),
     }));
+  }, [table, tableId, updateCell]);
+
+  const data = useMemo<TableRow[]>(() => {
+    if (!table) return [];
+
+    return table.rows.map((row) => {
+      const values = row.values as Record<string, string | number>;
+      return {
+        id: row.id,
+        ...values,
+      };
+    });
   }, [table]);
-
-  const data = useMemo(() => {
-  if (!table) return [];
-
-  return table.rows.map((row) => {
-    const values = row.values as Record<string, string | number>;
-    return {
-      id: row.id,
-      ...values,
-    };
-  });
-}, [table]);
-
 
   const tableInstance = useReactTable({
     data,
