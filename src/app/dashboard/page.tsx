@@ -7,11 +7,10 @@ import { useState } from "react";
 export default function DashboardPage() {
   const { data: bases, isLoading, refetch } = api.base.getAll.useQuery();
   const createBase = api.base.create.useMutation({
-  onSuccess: () => {
-    refetch(); // refresh the list
+  onSuccess: async () => {
+    await refetch(); // make sure to use await
   },
 });
-
   const [newBaseName, setNewBaseName] = useState("");
 
   const handleCreate = async () => {
