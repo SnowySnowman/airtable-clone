@@ -46,11 +46,11 @@ export const baseRouter = createTRPCRouter({
       return newBase;
     }),
     getOne: protectedProcedure
-    .input(z.object({ baseId: z.string() }))
-    .query(async ({ ctx, input }) => {
-      return ctx.db.base.findUnique({
-        where: { id: input.baseId },
-        include: { tables: true },
-      });
+        .input(z.object({ baseId: z.string() }))
+        .query(async ({ ctx, input }) => {
+        return ctx.db.base.findUnique({
+            where: { id: input.baseId },
+            include: { tables: true },
+        });
     }),
 });

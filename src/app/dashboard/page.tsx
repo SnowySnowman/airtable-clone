@@ -14,9 +14,9 @@ export default function DashboardPage() {
 
   const [newBaseName, setNewBaseName] = useState("");
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!newBaseName.trim()) return;
-    createBase.mutate({ name: newBaseName });
+    await createBase.mutateAsync({ name: newBaseName });
     setNewBaseName("");
   };
 
