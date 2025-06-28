@@ -132,15 +132,7 @@ export default function BasePage() {
   if (!base) return <p className="p-4">Base not found.</p>;
 
   const tables = base?.tables ?? [];
-  // const currentTableId = activeTableId ?? (tables?.[0]?.id ?? null);
-  let currentTableId = activeTableId;
-  // if (!currentTableId && tables.length > 0) {
-  //   currentTableId = tables[0]!.id;
-  // }
-  if (!currentTableId && tables?.length > 0 && tables[0]?.id) {
-    currentTableId = tables[0].id;
-  }
-
+  const currentTableId = activeTableId || (tables.length > 0 ? tables[0].id : null);
 
   return (
     <div className="p-4">

@@ -266,9 +266,9 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
               ? {
                   ...row,
                   values: {
-                    ...(row.values ?? {}) as Record<string, string | number>,
+                    ...((row.values ?? {}) as Record<string, any>),
                     [columnId]: value,
-                  }
+                  },
                 }
               : row
           ),
@@ -289,13 +289,13 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
     },
   });
 
-  const addColumn = api.table.addColumn.useMutation({ onSuccess: () => void refetch() });
-  const renameColumn = api.table.renameColumn.useMutation({ onSuccess: () => void refetch() });
-  const deleteColumn = api.table.deleteColumn.useMutation({ onSuccess: () => void refetch() });
-  const addRow = api.table.addRow.useMutation({ onSuccess: () => void refetch() });
-  const addFakeRows = api.table.addFakeRows.useMutation({ onSuccess: () => void refetch() });
+  const addColumn = api.table.addColumn.useMutation({ onSuccess: () => refetch() });
+  const renameColumn = api.table.renameColumn.useMutation({ onSuccess: () => refetch() });
+  const deleteColumn = api.table.deleteColumn.useMutation({ onSuccess: () => refetch() });
+  const addRow = api.table.addRow.useMutation({ onSuccess: () => refetch() });
+  const addFakeRows = api.table.addFakeRows.useMutation({ onSuccess: () => refetch() });
 
-  const columns = useMemo<ColumnDef<TableRow, string | number>[]>(() => {
+  const columns = useMemo<ColumnDef<TableRow>[]>(() => {
     if (!table) return [];
 
     return table.columns.map((col) => ({
@@ -329,20 +329,20 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
           onBlur={(e) => {
             const newValue = e.target.value;
             if (newValue !== getValue()) {
-              void updateCell.mutate({
+              updateCell.mutate({
                 tableId,
                 rowId: row.original.id,
                 columnId: column.id,
                 value: newValue,
               }, {
-                onSuccess: () => void refetch(),
+                onSuccess: () => refetch(),
               });
             }
           }}
         />
       ),
     }));
-  }, [table, tableId, renameColumn, deleteColumn, updateCell, refetch]);
+  }, [table, tableId]);
 
   const data = useMemo<TableRow[]>(() => {
     if (!table) return [];
@@ -366,10 +366,7 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
     columnResizeMode: "onChange",
     meta: {
       updateData: (rowIndex: number, columnId: string, value: string) => {
-        const row = data[rowIndex];
-        if (!row) return; // ✅ prevent undefined access
-
-        const rowId = row.id;
+        const rowId = data[rowIndex].id;
         updateCell.mutate({
           tableId,
           rowId,
@@ -378,8 +375,7 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
         });
       },
     },
-
-  });
+  } as any); // 👈 prevent type conflict
 
 
 
