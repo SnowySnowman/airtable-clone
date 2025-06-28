@@ -366,7 +366,10 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
     columnResizeMode: "onChange",
     meta: {
       updateData: (rowIndex: number, columnId: string, value: string) => {
-        const rowId = data[rowIndex].id;
+        const row = data[rowIndex];
+        if (!row) return; // ✅ prevent undefined access
+
+        const rowId = row.id;
         updateCell.mutate({
           tableId,
           rowId,
@@ -375,6 +378,7 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
         });
       },
     },
+
   } as any); // 👈 prevent type conflict
 
 
