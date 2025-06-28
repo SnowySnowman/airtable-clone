@@ -266,9 +266,9 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
               ? {
                   ...row,
                   values: {
-                    ...((row.values ?? {}) as Record<string, any>),
+                    ...(row.values ?? {}) as Record<string, string | number>,
                     [columnId]: value,
-                  },
+                  }
                 }
               : row
           ),
@@ -329,13 +329,13 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
           onBlur={(e) => {
             const newValue = e.target.value;
             if (newValue !== getValue()) {
-              updateCell.mutate({
+              void updateCell.mutate({
                 tableId,
                 rowId: row.original.id,
                 columnId: column.id,
                 value: newValue,
               }, {
-                onSuccess: () => refetch(),
+                onSuccess: () => void refetch(),
               });
             }
           }}

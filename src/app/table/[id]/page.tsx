@@ -1,5 +1,11 @@
 import TablePage from './TablePage';
 
-export default function Page({ params }: any) {
+type PageProps = {
+  params: {
+    id: string;
+  };
+};
+
+export default function Page({ params }: PageProps) {
   return <TablePage tableId={params.id} />;
 }
