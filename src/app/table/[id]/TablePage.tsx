@@ -244,7 +244,8 @@ type TableRow = {
 
 
 
-export default function TablePage({ tableId }: { tableId: string }) {
+export default function TablePage({ params }: { params: { id: string } }) {
+  const tableId = params.id;
   const [rowCount, setRowCount] = useState(0);
   // const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId });
   const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId }, {
