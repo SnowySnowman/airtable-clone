@@ -296,7 +296,7 @@ export default function TablePage({ tableId }: { tableId: string }) {
       data?.pages.flatMap((page) =>
         page.rows.map((row) => ({
           id: row.id,
-          ...(row.values ?? {}),
+          ...((row.values ?? {}) as Record<string, string | number>),
         }))
       ) ?? []
     );
