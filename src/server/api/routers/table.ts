@@ -174,7 +174,7 @@ export const tableRouter = createTRPCRouter({
           const values: Record<string, string | number> = {};
           for (const col of table.columns) {
             values[col.id] =
-              col.type === "number"
+              col.type === "NUMBER"
                 ? faker.number.int({ min: 1, max: 1000 })
                 : faker.word.words({ count: 3 });
           }
