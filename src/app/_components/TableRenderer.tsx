@@ -244,6 +244,10 @@ interface TableRendererProps {
   tableId: string;
 }
 
+type TableMetaType = {
+  updateData: (rowIndex: number, columnId: string, value: string) => void;
+};
+
 export default function TableRenderer({ tableId }: TableRendererProps) {
   const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId });
   const utils = api.useUtils();
@@ -316,7 +320,7 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
           className="w-full px-2 py-1 border box-border"
           value={getValue() as string}
           onChange={(e) => {
-            tableInstance.options.meta?.updateData?.(
+            (tableInstance.options.meta as TableMetaType)?.updateData?.(
               row.index,
               column.id,
               e.target.value
@@ -348,12 +352,32 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
     }));
   }, [table]);
 
+  // const tableInstance = useReactTable({
+  //   data,
+  //   columns,
+  //   getCoreRowModel: getCoreRowModel(),
+  //   columnResizeMode: "onChange",
+  // });
+
   const tableInstance = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
     columnResizeMode: "onChange",
-  });
+    meta: {
+      updateData: (rowIndex: number, columnId: string, value: string) => {
+        const rowId = data[rowIndex].id;
+        updateCell.mutate({
+          tableId,
+          rowId,
+          columnId,
+          value,
+        });
+      },
+    },
+  } as any); // 👈 prevent type conflict
+
+
 
   if (isLoading) return <p className="p-4">Loading table...</p>;
   if (!table) return <p className="p-4">Table not found.</p>;
