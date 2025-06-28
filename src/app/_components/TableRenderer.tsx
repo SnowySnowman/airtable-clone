@@ -289,13 +289,13 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
     },
   });
 
-  const addColumn = api.table.addColumn.useMutation({ onSuccess: () => refetch() });
-  const renameColumn = api.table.renameColumn.useMutation({ onSuccess: () => refetch() });
-  const deleteColumn = api.table.deleteColumn.useMutation({ onSuccess: () => refetch() });
-  const addRow = api.table.addRow.useMutation({ onSuccess: () => refetch() });
-  const addFakeRows = api.table.addFakeRows.useMutation({ onSuccess: () => refetch() });
+  const addColumn = api.table.addColumn.useMutation({ onSuccess: () => void refetch() });
+  const renameColumn = api.table.renameColumn.useMutation({ onSuccess: () => void refetch() });
+  const deleteColumn = api.table.deleteColumn.useMutation({ onSuccess: () => void refetch() });
+  const addRow = api.table.addRow.useMutation({ onSuccess: () => void refetch() });
+  const addFakeRows = api.table.addFakeRows.useMutation({ onSuccess: () => void refetch() });
 
-  const columns = useMemo<ColumnDef<TableRow>[]>(() => {
+  const columns = useMemo<ColumnDef<TableRow, string | number>[]>(() => {
     if (!table) return [];
 
     return table.columns.map((col) => ({
@@ -342,7 +342,7 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
         />
       ),
     }));
-  }, [table, tableId]);
+  }, [table, tableId, renameColumn, deleteColumn, updateCell, refetch]);
 
   const data = useMemo<TableRow[]>(() => {
     if (!table) return [];
@@ -379,7 +379,7 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
       },
     },
 
-  } as any); // 👈 prevent type conflict
+  });
 
 
 
