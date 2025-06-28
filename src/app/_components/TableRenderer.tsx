@@ -262,7 +262,7 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
               ? {
                   ...row,
                   values: {
-                    ...row.values,
+                    ...(row.values ?? {}),
                     [columnId]: value,
                   },
                 }
