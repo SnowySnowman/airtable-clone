@@ -232,10 +232,16 @@ import {
   useReactTable,
   getCoreRowModel,
   flexRender,
+  getFilteredRowModel,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useMemo, useRef, useEffect, useState } from 'react';
+import React from 'react';
+import { useDebounce } from 'use-debounce';
+import type { TableView } from '@prisma/client';
+
+
 
 type TableRow = {
   id: string;
@@ -246,6 +252,20 @@ type TableRow = {
 
 export default function TablePage({ tableId }: { tableId: string }) {
   const [rowCount, setRowCount] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch] = useDebounce(searchQuery, 300);
+  const { data: views } = api.table.getViews.useQuery({ tableId });
+  const [selectedView, setSelectedView] = useState<TableView | null>(null);
+  const [viewName, setViewName] = useState("");
+  const [sortConfig, setSortConfig] = useState<{ columnId: string; order: "asc" | "desc" } | undefined>(undefined);
+  const [viewSavedMessage, setViewSavedMessage] = useState<string | null>(null);
+  const [filters, setFilters] = useState<Record<
+    string,
+    { type: "text" | "number"; op: string; value: any }
+  >>({});
+
+
+
   // const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId });
   const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId }, {
     refetchOnWindowFocus: false, // prevents double-fetching
@@ -257,9 +277,22 @@ export default function TablePage({ tableId }: { tableId: string }) {
     hasNextPage,
     isFetchingNextPage,
   } = api.table.getRows.useInfiniteQuery(
-    { tableId, limit: 1000 },
+    { tableId, 
+      limit: 1000, 
+      // search: searchQuery, 
+      search: selectedView?.config?.search ?? debouncedSearch,
+      // sort: selectedView?.sort as { columnId: string; order: "asc" | "desc" } | undefined,
+      sort: selectedView?.config?.sort
+      ? {
+          columnId: (selectedView.config.sort as any)?.columnId,
+          order: (selectedView.config.sort as any)?.order,
+        }
+      : undefined,
+      filters: selectedView?.config?.filters ?? filters
+    },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
+      refetchOnWindowFocus: false,
     }
   );
 
@@ -283,6 +316,27 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const addRow = api.table.addRow.useMutation({ onSuccess: () => refetch() });
   const addFakeRows = api.table.addFakeRows.useMutation({ onSuccess: () => refetch() });
   const utils = api.useUtils();
+  // const saveView = api.table.saveView.useMutation({
+  //   onSuccess: () => {
+  //     utils.table.getViews.invalidate({ tableId }); // refresh views after save
+  //   },
+  // });
+
+  const saveView = api.table.saveView.useMutation({
+  onSuccess: async () => {
+    setViewSavedMessage("✅ View saved successfully!");
+    await utils.table.getViews.invalidate({ tableId });
+
+    // Auto-hide the message after 3 seconds
+    setTimeout(() => setViewSavedMessage(null), 3000);
+  },
+  onError: () => {
+    setViewSavedMessage("❌ Failed to save view. Please try again.");
+    setTimeout(() => setViewSavedMessage(null), 3000);
+  }
+});
+
+
   
   
   function getCellValue(rowId: string, columnId: string, defaultValue: string): string {
@@ -300,7 +354,7 @@ export default function TablePage({ tableId }: { tableId: string }) {
         }))
       ) ?? []
     );
-  }, [data]);
+  }, [data, searchQuery]);
   console.log("DEBUG flatRows:", flatRows);
 
   const columns = useMemo<ColumnDef<TableRow>[]>(() => {
@@ -386,10 +440,12 @@ const tableInstance = useReactTable({
   data: flatRows,
   columns,
   getCoreRowModel: getCoreRowModel(),
+  getFilteredRowModel: getFilteredRowModel(), 
   getRowId: (row) => row.id,
   columnResizeMode: 'onChange', // optional if you want to allow resizing
   defaultColumn: {
     size: 150, // ← default fallback size for any new column
+    filterFn: 'includesString',
   },
 });
 
@@ -411,7 +467,7 @@ const tableInstance = useReactTable({
     if (last.index >= flatRows.length - 1 && hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
-  }, [virtualRows, flatRows.length, hasNextPage, isFetchingNextPage]);
+  }, [virtualRows, flatRows.length, hasNextPage, isFetchingNextPage, searchQuery]);
 
   // if (isLoading) return <p className="p-4">Loading table...</p>;
   if (isLoading || !table?.columns?.length) return <p className="p-4">Loading table...</p>;
@@ -420,7 +476,11 @@ const tableInstance = useReactTable({
   return (
     <div className="p-4">
       <h1 className="text-xl font-bold mb-4">{table.name}</h1>
-
+      {viewSavedMessage && (
+        <div className="mb-4 px-4 py-2 bg-green-100 border border-green-400 text-green-700 rounded shadow">
+          {viewSavedMessage}
+        </div>
+      )}
       <div className="mb-4 space-x-2">
         <button
           onClick={() => {
@@ -453,6 +513,74 @@ const tableInstance = useReactTable({
         >
           ⚡ Add 100k Rows
         </button>
+        <div className="mb-4">
+          <input
+            type="text"
+            placeholder="🔍 Search across all cells..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="px-3 py-2 border rounded w-full max-w-sm"
+          />
+        </div>
+        <div className="mb-4">
+          <label htmlFor="view-select" className="mr-2 font-medium">View:</label>
+          <select
+            id="view-select"
+            className="px-2 py-1 border rounded"
+            onChange={(e) => {
+              const view = views?.find(v => v.id === e.target.value);
+              // setSelectedView(view ?? null);
+              if (!view) {
+                setSelectedView(null);
+                setSearchQuery("");        // ✅ clear search
+                // clear sortConfig if you're using it
+              } else {
+                setSelectedView(view);
+                setSearchQuery(view.config?.search ?? ""); // ✅ apply saved search
+              }
+            }}
+          >
+            <option value="">Default View</option>
+            {views?.map(view => (
+              <option key={view.id} value={view.id}>{view.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mb-4">
+          <label htmlFor="view-name" className="mr-2 font-medium">Save Current View:</label>
+          <input
+            id="view-name"
+            type="text"
+            placeholder="View name"
+            value={viewName}
+            onChange={(e) => setViewName(e.target.value)}
+            className="px-2 py-1 border rounded mr-2"
+          />
+          <button
+            className="bg-gray-800 text-white px-3 py-1 rounded"
+            onClick={() => {
+              if (!viewName.trim()) return alert("Enter a name");
+
+              saveView.mutate({
+                tableId,
+                name: viewName.trim(),
+                config: {
+                  search: searchQuery || undefined,
+                  sort: sortConfig || undefined,
+                  filters,         // placeholder for now
+                  hiddenColumns: [],   // placeholder for now
+                },
+              });
+              
+              setViewName(""); // clear input after saving
+            }}
+          >
+            💾 Save View
+          </button>
+        </div>
+
+
       </div>
 
       <div className="h-[600px] overflow-auto border" ref={parentRef}>
@@ -470,7 +598,7 @@ const tableInstance = useReactTable({
               />
             ))}
           </colgroup>
-          <thead>
+          {/* <thead>
             {tableInstance.getHeaderGroups().map((group) => (
               <tr key={group.id}>
                 {group.headers.map((header) => (
@@ -484,7 +612,97 @@ const tableInstance = useReactTable({
                 ))}
               </tr>
             ))}
-          </thead>
+          </thead> */}
+          <thead>
+            {tableInstance.getHeaderGroups().map((group) => (
+                <React.Fragment key={group.id}>
+                <tr>
+                    {group.headers.map((header) => (
+                    <th
+                        key={header.id}
+                        className="border px-2 py-2 bg-gray-100"
+                        style={{ boxSizing: "border-box" }}
+                    >
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                    ))}
+                </tr>
+
+                {/* ✅ Filter row below headers */}
+                <tr>
+                    {group.headers.map((header) => {
+                      const col = table.columns.find(c => c.id === header.id);
+                      if (!col) return <th key={header.id}></th>;
+                      // if (!col) return <th key={header.id} className="border px-2 py-1" />;
+
+                      // Ensure type is lowercase 'number' or 'text'
+                      const colType = col.type.toLowerCase() as "number" | "text";
+
+                      return (
+                        <th key={header.id} className="border px-2 py-1">
+                          <div className="space-y-1">
+                            {/* Operator select */}
+                            <select
+                              className="w-full text-sm"
+                              value={filters[header.id]?.op || ""}
+                              onChange={(e) => {
+                                const op = e.target.value;
+                                setFilters((prev) => ({
+                                  ...prev,
+                                  [header.id]: {
+                                    type: colType,
+                                    op,
+                                    value: op.includes("empty") ? null : prev[header.id]?.value ?? "",
+                                  },
+                                }));
+                              }}
+                            >
+                              <option value="">--</option>
+
+                              {colType === "number" ? (
+                                <>
+                                  <option value=">">greater than</option>
+                                  <option value="<">less than</option>
+                                </>
+                              ) : (
+                                <>
+                                  <option value="equals">equals</option>
+                                  <option value="contains">contains</option>
+                                  <option value="not_contains">not contains</option>
+                                  <option value="is_empty">is empty</option>
+                                  <option value="is_not_empty">is not empty</option>
+                                </>
+                              )}
+                            </select>
+
+                            {/* Value input, only show if not empty check */}
+                            {filters[header.id]?.op && !filters[header.id].op.includes("empty") && (
+                              <input
+                                className="w-full text-sm"
+                                type={colType === "number" ? "number" : "text"}
+                                value={filters[header.id]?.value ?? ""}
+                                onChange={(e) => {
+                                  const value = colType === "number" ? Number(e.target.value) : e.target.value;
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    [header.id]: {
+                                      type: colType,
+                                      op: prev[header.id]?.op ?? "",
+                                      value,
+                                    },
+                                  }));
+                                }}
+                              />
+                            )}
+                          </div>
+                        </th>
+                      );
+                    })}
+                </tr>
+                </React.Fragment>
+            ))}
+            </thead>
+
         </table>
 
         {/* Virtualised Body */}
