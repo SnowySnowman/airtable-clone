@@ -1,230 +1,3 @@
-// "use client";
-
-// import { api } from '~/trpc/react';
-// import {
-//   useReactTable,
-//   getCoreRowModel,
-//   flexRender,
-// } from '@tanstack/react-table';
-// import type { ColumnDef } from '@tanstack/react-table';
-// import { useMemo, useRef, useEffect, useState } from 'react';
-// import { useVirtualizer } from '@tanstack/react-virtual';
-
-// // Type for a row of table data
-// type TableRow = {
-//   id: string;
-//   [key: string]: string | number;
-// };
-
-// type TablePageProps = {
-//   tableId: string;
-// };
-
-// export default function TablePage({ tableId }: TablePageProps) {
-//   const [rowCount, setRowCount] = useState(0);
-
-//   const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId });
-//   const {
-//     data,
-//     fetchNextPage,
-//     hasNextPage,
-//     isFetchingNextPage,
-//   } = api.table.getRows.useInfiniteQuery(
-//     { tableId, limit: 1000 },
-//     {
-//       getNextPageParam: (lastPage) => lastPage.nextCursor,
-//       keepPreviousData: true,
-//       onSuccess: (data) => {
-//         const total = data.pages.reduce((acc, page) => acc + page.rows.length, 0);
-//         setRowCount(total);
-//       },
-//     }
-//   );
-
-//   const utils = api.useUtils();
-
-//   const addColumn = api.table.addColumn.useMutation({ onSuccess: () => refetch() });
-//   const renameColumn = api.table.renameColumn.useMutation({ onSuccess: () => refetch() });
-//   const deleteColumn = api.table.deleteColumn.useMutation({ onSuccess: () => refetch() });
-
-//   const addRow = api.table.addRow.useMutation({ onSuccess: () => refetch() });
-//   const addFakeRows = api.table.addFakeRows.useMutation({ onSuccess: () => refetch() });
-
-//   const updateCell = api.table.updateCell.useMutation({
-//     onMutate: async ({ tableId, rowId, columnId, value }) => {
-//       await utils.table.getTableById.cancel();
-//       const previousData = utils.table.getTableById.getData({ tableId });
-//       utils.table.getTableById.setData({ tableId }, (old) => {
-//         if (!old) return old;
-//         return {
-//           ...old,
-//           rows: old.rows.map((row) =>
-//             row.id === rowId ? { ...row, values: { ...row.values, [columnId]: value } } : row
-//           ),
-//         };
-//       });
-//       return { previousData };
-//     },
-//     onError: (_err, _input, context) => {
-//       if (context?.previousData) {
-//         utils.table.getTableById.setData({ tableId: _input.tableId }, context.previousData);
-//       }
-//     },
-//     onSettled: (_data, _error, variables) => {
-//       utils.table.getTableById.invalidate({ tableId: variables.tableId });
-//     },
-//   });
-
-//   const flatRows = useMemo(() => {
-//     return (
-//       data?.pages.flatMap((page) =>
-//         page.rows.map((row) => ({
-//           id: row.id,
-//           ...row.values, // flatten the `values` JSON field into top-level columns
-//         }))
-//       ) ?? []
-//     );
-//   }, [data]);
-
-
-
-//   const columns = useMemo<ColumnDef<TableRow>[]>(() => {
-//     if (!table) return [];
-//     return table.columns.map((col) => ({
-//       accessorKey: col.id,
-//       header: () => (
-//         <div className="flex items-center space-x-2">
-//           <span>{col.name}</span>
-//           <button onClick={() => {
-//             const newName = prompt("Rename column:", col.name);
-//             if (newName) renameColumn.mutate({ columnId: col.id, name: newName });
-//           }}>✏️</button>
-//           <button onClick={() => {
-//             if (confirm("Delete this column?")) deleteColumn.mutate({ columnId: col.id });
-//           }}>🗑️</button>
-//         </div>
-//       ),
-//       cell: ({ getValue, row, column }) => (
-//         <input
-//           className="border px-2 py-1 w-full"
-//           defaultValue={getValue() as string}
-//           onBlur={(e) => {
-//             updateCell.mutate({
-//               tableId,
-//               rowId: row.original.id,
-//               columnId: column.id,
-//               value: e.target.value,
-//             });
-//           }}
-//         />
-//       ),
-//     }));
-//   }, [table, tableId, updateCell]);
-
-//   const tableInstance = useReactTable({
-//     data: flatRows,
-//     columns,
-//     getCoreRowModel: getCoreRowModel(),
-//     getRowId: (row) => row.id,
-//   });
-
-//   const parentRef = useRef<HTMLDivElement>(null);
-//   const virtualizer = useVirtualizer({
-//     count: rowCount,
-//     getScrollElement: () => parentRef.current,
-//     estimateSize: () => 40,
-//     overscan: 10,
-//   });
-
-//   const virtualRows = virtualizer.getVirtualItems();
-//   const totalHeight = virtualizer.getTotalSize();
-
-//   useEffect(() => {
-//   const last = virtualRows.at(-1);
-//   if (!last) return;
-
-//   if (last.index >= flatRows.length - 1 && hasNextPage && !isFetchingNextPage) {
-//     fetchNextPage();
-//   }
-// }, [virtualRows, flatRows.length, fetchNextPage, hasNextPage, isFetchingNextPage]);
-
-
-//   if (isLoading) return <p className="p-4">Loading table...</p>;
-//   if (!table) return <p className="p-4">Table not found.</p>;
-
-//   return (
-//     <div className="p-4">
-//       <h1 className="text-xl font-bold mb-4">{table.name}</h1>
-//       <div className="mb-4 space-x-2">
-//         <button onClick={() => {
-//           const name = prompt("Column name?");
-//           if (!name) return;
-//           const type = prompt("Type (text/number)?", "text");
-//           if (!["text", "number"].includes(type ?? "")) return alert("Invalid type");
-//           addColumn.mutate({ tableId, name, type: type as "text" | "number" });
-//         }} className="bg-green-500 text-white px-3 py-1 rounded">➕ Add Column</button>
-
-//         <button onClick={() => { addRow.mutate({ tableId }); }} className="bg-blue-500 text-white px-3 py-1 rounded">➕ Add Row</button>
-
-//         <button onClick={() => {
-//           if (confirm("Are you sure you want to add 100,000 fake rows?")) {
-//             addFakeRows.mutate({ tableId, count: 100000 });
-//           }
-//         }} className="bg-purple-500 text-white px-3 py-1 rounded">⚡ Add 100k Rows</button>
-//       </div>
-
-//       <div ref={parentRef} className="h-[600px] overflow-auto border">
-//         <div style={{ height: totalHeight, position: "relative" }}>
-//           <table className="absolute top-0 left-0 w-full table-auto border-collapse">
-//             <thead>
-//               {tableInstance.getHeaderGroups().map((group) => (
-//                 <tr key={group.id}>
-//                   {group.headers.map((header) => (
-//                     <th key={header.id} className="border p-2 bg-gray-100">
-//                       {flexRender(header.column.columnDef.header, header.getContext())}
-//                     </th>
-//                   ))}
-//                 </tr>
-//               ))}
-//             </thead>
-//             <tbody>
-//               {virtualRows.map((virtualRow) => {
-//                 const row = flatRows[virtualRow.index];
-//                 if (!row) return null;
-                
-//                 return (
-//                   <tr
-//                     key={row.id}
-//                     style={{ position: "absolute", top: 0, transform: `translateY(${virtualRow.start}px)` }}
-//                   >
-//                     {table.columns.map((col) => (
-//                       <td key={col.id} className="border p-2">
-//                         <input
-//                           className="border px-2 py-1 w-full"
-//                           defaultValue={String(row.values?.[col.id] ?? "")}
-//                           onBlur={(e) => {
-//                             updateCell.mutate({
-//                               tableId,
-//                               rowId: row.id,
-//                               columnId: col.id,
-//                               value: e.target.value,
-//                             });
-//                           }}
-//                         />
-//                       </td>
-//                     ))}
-//                   </tr>
-//                 );
-//               })}
-//             </tbody>
-//           </table>
-//         </div>
-//       </div>
-//     </div>
-//   );
-// }
-
-
 'use client';
 
 import { api } from '~/trpc/react';
@@ -240,6 +13,7 @@ import { useMemo, useRef, useEffect, useState } from 'react';
 import React from 'react';
 import { useDebounce } from 'use-debounce';
 import type { TableView } from '@prisma/client';
+import type { ViewConfig } from '~/server/api/routers/table';
 
 
 
@@ -536,10 +310,17 @@ const tableInstance = useReactTable({
               if (!view) {
                 setSelectedView(null);
                 setSearchQuery("");        // ✅ clear search
+                setSort(undefined);
+                setFilters({})
                 // clear sortConfig if you're using it
               } else {
                 setSelectedView(view);
-                setSearchQuery(view.config?.search ?? ""); // ✅ apply saved search
+
+                const config = view.config as ViewConfig;
+                setFilters(config.filters ?? {});
+                setSort(config.sort ?? undefined);
+                setSearchQuery(config.search ?? "");
+                                
               }
             }}
           >
@@ -565,12 +346,14 @@ const tableInstance = useReactTable({
             onClick={() => {
               if (!viewName.trim()) return alert("Enter a name");
 
+              console.log("Saving view with sort:", sort);
+
               saveView.mutate({
                 tableId,
                 name: viewName.trim(),
                 config: {
                   search: searchQuery || undefined,
-                  sort: sortConfig || undefined,
+                  sort: sortConfig,
                   filters: filters || undefined,         // placeholder for now
                   hiddenColumns: [],   // placeholder for now
                 },
@@ -626,31 +409,41 @@ const tableInstance = useReactTable({
                         className="border px-2 py-2 bg-gray-100"
                         style={{ boxSizing: "border-box" }}
                     >
-                        <div className="flex flex-col">
-                          <div className="flex justify-between items-center">
-                            <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
+                          <div className="flex flex-col">
+                            <div className="flex justify-between items-center">
+                              <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
 
-                            {/* Sorting dropdown */}
-                            <select
-                              className="text-xs ml-2"
-                              value={
-                                sort?.columnId === header.id ? sort.order : ""
-                              }
-                              onChange={(e) => {
-                                const order = e.target.value;
-                                setSort(
-                                  order
+                              {/* Sorting dropdown */}
+                              <select
+                                className="text-xs ml-2"
+                                value={
+                                  sort?.columnId === header.id ? sort.order : ""
+                                }
+                                // onChange={(e) => {
+                                //   const order = e.target.value;
+                                //   setSort(
+                                //     order
+                                //       ? { columnId: header.id, order: order as "asc" | "desc" }
+                                //       : undefined
+                                //   );
+                                // }}
+                                onChange={(e) => {
+                                  const order = e.target.value;
+                                  const newSort = order
                                     ? { columnId: header.id, order: order as "asc" | "desc" }
-                                    : undefined
-                                );
-                              }}
-                            >
-                              <option value="">⇅</option>
-                              <option value="asc">↑ A–Z / 1–9</option>
-                              <option value="desc">↓ Z–A / 9–1</option>
-                            </select>
+                                    : undefined;
+                                  console.log("sort selected:", newSort); // <-- optional debug
+                                  setSort(newSort);
+                                  setSortConfig(newSort);
+                                }}
+
+                              >
+                                <option value="">⇅</option>
+                                <option value="asc">↑ A–Z / 1–9</option>
+                                <option value="desc">↓ Z–A / 9–1</option>
+                              </select>
+                            </div>
                           </div>
-                        </div>
 
                     </th>
                     ))}
