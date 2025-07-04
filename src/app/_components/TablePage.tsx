@@ -55,7 +55,7 @@ export default function TablePage({ tableId }: { tableId: string }) {
     { tableId, 
       limit: 1000, 
       // search: searchQuery, 
-      search: selectedView?.config?.search ?? debouncedSearch,
+      search: (selectedView?.config as ViewConfig | undefined)?.search ?? debouncedSearch,
       // sort: selectedView?.sort as { columnId: string; order: "asc" | "desc" } | undefined,
       // sort: selectedView?.config?.sort
       // ? {
@@ -63,8 +63,8 @@ export default function TablePage({ tableId }: { tableId: string }) {
       //     order: (selectedView.config.sort as any)?.order,
       //   }
       // : undefined,
-      sort: sort,
-      filters: selectedView?.config?.filters ?? filters
+      sort: (selectedView?.config as ViewConfig | undefined)?.sort ?? sort,
+      filters: (selectedView?.config as ViewConfig | undefined)?.filters ?? filters,
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
