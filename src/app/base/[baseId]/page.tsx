@@ -37,6 +37,7 @@ export default function BasePage() {
 
   const tables = base?.tables ?? [];
   const currentTableId = activeTableId || (tables.length > 0 ? tables[0].id : null);
+  
 
   return (
     <div className="p-4">

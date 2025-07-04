@@ -21,7 +21,9 @@ type TableRow = {
   [key: string]: string | number;
 };
 
-
+function isViewConfig(config: unknown): config is ViewConfig {
+  return typeof config === 'object' && config !== null && 'filters' in config;
+}
 
 export default function TablePage({ tableId }: { tableId: string }) {
   const [rowCount, setRowCount] = useState(0);
@@ -54,21 +56,17 @@ export default function TablePage({ tableId }: { tableId: string }) {
   } = api.table.getRows.useInfiniteQuery(
     { tableId, 
       limit: 1000, 
-      // search: searchQuery, 
-      search: (selectedView?.config as ViewConfig | undefined)?.search ?? debouncedSearch,
-      // sort: selectedView?.sort as { columnId: string; order: "asc" | "desc" } | undefined,
-      // sort: selectedView?.config?.sort
-      // ? {
-      //     columnId: (selectedView.config.sort as any)?.columnId,
-      //     order: (selectedView.config.sort as any)?.order,
-      //   }
-      // : undefined,
-      sort: (selectedView?.config as ViewConfig | undefined)?.sort ?? sort,
-      filters: (selectedView?.config as ViewConfig | undefined)?.filters ?? filters,
+    //   search: (selectedView?.config as ViewConfig | undefined)?.search ?? debouncedSearch,
+    //   sort: sort,
+    //   filters: selectedView?.config?.filters ?? filters
+    search: isViewConfig(selectedView?.config) ? selectedView.config.search ?? debouncedSearch : debouncedSearch,
+    sort: isViewConfig(selectedView?.config) ? selectedView.config.sort ?? sort : sort,
+    filters: isViewConfig(selectedView?.config) ? selectedView.config.filters ?? filters : filters,
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
       refetchOnWindowFocus: false,
+      enabled: !!tableId,
     }
   );
 
