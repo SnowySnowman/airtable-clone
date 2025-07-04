@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "~/server/api/trpc";
-import { Prisma, type ColumnType, type Row } from "@prisma/client";
+import { Prisma, ColumnType, type Row } from "@prisma/client";
 import { faker } from '@faker-js/faker';
 import { PrismaAdapter } from "@auth/prisma-adapter";
 
@@ -186,7 +186,7 @@ export const tableRouter = createTRPCRouter({
           const values: Record<string, string | number> = {};
           for (const col of table.columns) {
             values[col.id] =
-              col.type === "number"
+              col.type === ColumnType.NUMBER
                 ? faker.number.int({ min: 1, max: 1000 })
                 : faker.word.words({ count: 3 });
           }
