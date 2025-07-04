@@ -33,16 +33,54 @@ export const tableRouter = createTRPCRouter({
       return table;
     }),
 
-  create: protectedProcedure
-  .input(z.object({ baseId: z.string(), name: z.string() }))
-  .mutation(async ({ input, ctx }) => {
-    return ctx.db.table.create({
-      data: {
-        name: input.name,
-        baseId: input.baseId,
-      },
-    });
-  }),
+  
+    create: protectedProcedure
+      .input(z.object({ baseId: z.string(), name: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const newTable = await ctx.db.table.create({
+          data: {
+            baseId: input.baseId,
+            name: input.name,
+          },
+        });
+
+        // Add default columns
+        const [nameCol, ageCol] = await ctx.db.$transaction([
+          ctx.db.column.create({
+            data: {
+              name: "Name",
+              type: "TEXT",
+              tableId: newTable.id,
+              order: 0,
+            },
+          }),
+          ctx.db.column.create({
+            data: {
+              name: "Age",
+              type: "NUMBER",
+              tableId: newTable.id,
+              order: 1,
+            },
+          }),
+        ]);
+
+        // Add 5 fake rows
+        const rowsData = Array.from({ length: 5 }).map(() => ({
+          tableId: newTable.id,
+          values: {
+            [nameCol.id]: faker.person.fullName(),
+            [ageCol.id]: faker.number.int({ min: 18, max: 65 }),
+          },
+        }));
+
+        await ctx.db.row.createMany({
+          data: rowsData,
+        });
+
+        console.log("created new table")
+        return newTable;
+      }),
+
 
   // Rename a table
   rename: protectedProcedure

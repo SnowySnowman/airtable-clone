@@ -13,11 +13,35 @@ export default function DashboardPage() {
 });
   const [newBaseName, setNewBaseName] = useState("");
 
+  // const handleCreate = async () => {
+
+  //   console.log("Clicked create")
+
+  //   if (!newBaseName.trim()) return;
+    
+  //   try {
+  //     await createBase.mutateAsync({ name: newBaseName });
+  //     setNewBaseName("");
+  //     // refetch(); // optionally refresh the list
+  //   } catch (err) {
+  //     console.error("❌ Create base failed:", err);
+  //   }
+  // };
+
   const handleCreate = async () => {
-  if (!newBaseName.trim()) return;
-    await createBase.mutateAsync({ name: newBaseName });
-    setNewBaseName("");
-    };
+    if (!newBaseName.trim()) {
+      alert("Base name cannot be empty.");
+      return;
+    }
+
+    try {
+      await createBase.mutateAsync({ name: newBaseName.trim() });
+      setNewBaseName("");
+    } catch (err) {
+      console.error("❌ Create base failed:", err);
+      alert("Failed to create base. Check console.");
+    }
+  };
 
   if (isLoading) return <p>Loading your bases...</p>;
 

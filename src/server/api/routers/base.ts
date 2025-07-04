@@ -29,22 +29,48 @@ export const baseRouter = createTRPCRouter({
       },
     });
   }),
+
+  // create: protectedProcedure
+  //   .input(
+  //     z.object({
+  //       name: z.string().min(1),
+  //     }),
+  //   )
+  //   .mutation(async ({ ctx, input }) => {
+  //     const newBase = await ctx.db.base.create({
+  //       data: {
+  //         name: input.name,
+  //         userId: ctx.session.user.id,
+  //       },
+  //     });
+
+  //     console.log("Creating base for user:", ctx.session?.user?.id);
+  //     return newBase;
+  //   }),
+
   create: protectedProcedure
     .input(
       z.object({
         name: z.string().min(1),
-      }),
+      })
     )
     .mutation(async ({ ctx, input }) => {
-      const newBase = await ctx.db.base.create({
-        data: {
-          name: input.name,
-          userId: ctx.session.user.id,
-        },
-      });
-
-      return newBase;
+      try {
+        console.log("🧪 Creating base for user:", ctx.session?.user?.id);
+        const newBase = await ctx.db.base.create({
+          data: {
+            name: input.name,
+            userId: ctx.session.user.id,
+          },
+        });
+        return newBase;
+      } catch (error) {
+        console.error("❌ Error in base.create:", error);
+        throw error; // re-throw so you still get the error client-side
+      }
     }),
+
+
     getOne: protectedProcedure
     .input(z.object({ baseId: z.string() }))
     .query(async ({ input, ctx }) => {
