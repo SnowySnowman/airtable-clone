@@ -1,106 +1,10 @@
-// 'use client';
-
-// import { useParams } from 'next/navigation';
-// import { useState } from 'react';
-// import Link from 'next/link';
-// import { api } from '~/trpc/react';
-
-// export default function BasePage() {
-//   const params = useParams();
-//   const baseId = params?.baseId as string;
-
-//   const { data: base, isLoading, refetch } = api.base.getOne.useQuery({ baseId });
-//   const createTable = api.table.create.useMutation({
-//     onSuccess: () => {
-//       refetch(); // Refresh table list after creation
-//     },
-//   });
-
-//   const [newTableName, setNewTableName] = useState('');
-
-//   const handleCreateTable = async () => {
-//     if (!newTableName.trim()) return;
-//     await createTable.mutateAsync({ baseId, name: newTableName });
-//     setNewTableName('');
-//   };
-
-//   const renameTable = api.table.rename.useMutation({
-//      onSuccess: () => refetch(), // or invalidateQueries if you're using tRPC context
-//   });
-
-//   const deleteTable = api.table.delete.useMutation({
-//     onSuccess: () => refetch(),
-//   });
-
-
-//   if (isLoading) return <p className="p-4">Loading...</p>;
-//   if (!base) return <p className="p-4">Base not found.</p>;
-
-//   return (
-//     <div className="p-4">
-//       <h1 className="text-2xl font-bold mb-4">Base: {base.name}</h1>
-
-//       {/* Create Table Form */}
-//       <div className="mb-6">
-//         <input
-//           type="text"
-//           value={newTableName}
-//           onChange={(e) => setNewTableName(e.target.value)}
-//           placeholder="Enter table name"
-//           className="border p-2 mr-2 rounded"
-//         />
-//         <button
-//           onClick={handleCreateTable}
-//           className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-//         >
-//           Create Table
-//         </button>
-//       </div>
-
-//       {/* Table List */}
-//       <h2 className="text-xl font-semibold mb-2">Tables</h2>
-//       <ul className="space-y-2">
-//         {base.tables.map((table) => (
-//             <li key={table.id} className="border p-3 rounded flex justify-between items-center">
-//                 <Link href={`/table/${table.id}`} className="font-medium">{table.name}</Link>
-//                 <div className="space-x-2">
-//                 <button
-//                     onClick={() => {
-//                     const newName = prompt("Rename table:", table.name);
-//                     if (newName && newName !== table.name) {
-//                         renameTable.mutate({ tableId: table.id, name: newName });
-//                     }
-//                     }}
-//                     className="text-sm text-blue-600"
-//                 >
-//                     Rename
-//                 </button>
-//                 <button
-//                     onClick={() => {
-//                     if (confirm("Are you sure you want to delete this table?")) {
-//                         deleteTable.mutate({ tableId: table.id });
-//                     }
-//                     }}
-//                     className="text-sm text-red-600"
-//                 >
-//                     Delete
-//                 </button>
-//                 </div>
-//             </li>
-//             ))}
-
-//       </ul>
-//     </div>
-//   );
-// }
-
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "~/trpc/react";
 import Link from "next/link";
-import TablePage from "../../table/[id]/page";
+import TablePage from "~/app/_components/TablePage";
 
 export default function BasePage() {
   const router = useRouter();

@@ -16,7 +16,6 @@ import type { TableView } from '@prisma/client';
 import type { ViewConfig } from '~/server/api/routers/table';
 
 
-
 type TableRow = {
   id: string;
   [key: string]: string | number;
