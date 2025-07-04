@@ -498,7 +498,8 @@ const tableInstance = useReactTable({
                             </select>
 
                             {/* Value input, only show if not empty check */}
-                            {filters[header.id]?.op && !filters[header.id].op.includes("empty") && (
+                            {typeof filters[header.id]?.op === "string" &&
+                            !filters[header.id]!.op!.includes("empty") && (
                               <input
                                 className="w-full text-sm"
                                 type={colType === "number" ? "number" : "text"}
