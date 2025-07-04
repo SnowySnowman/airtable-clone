@@ -126,8 +126,10 @@ export default function TablePage({ tableId }: { tableId: string }) {
       data?.pages.flatMap((page) =>
         page.rows.map((row) => ({
           id: row.id,
-          ...(row.values ?? {}),
-        }))
+          ...(typeof row.values === "object" && row.values !== null
+          ? row.values as Record<string, string | number>
+          : {})
+      }))
       ) ?? []
     );
   }, [data, searchQuery]);
