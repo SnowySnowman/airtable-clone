@@ -117,16 +117,11 @@ model VerificationToken {
 }
 
 model TableView {
-  id      String @id @default(cuid())
-  table   Table  @relation(fields: [tableId], references: [id])
-  tableId String
-
-  name       String
-  filters    Json
-  sort       Json
-  hiddenCols String[]
-  search     String?
-  config     Json
+  id       String   @id @default(cuid())
+  name     String
+  tableId  String
+  table    Table    @relation(fields: [tableId], references: [id])
+  config   Json     // this replaces filters, sort, search, hiddenCols
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

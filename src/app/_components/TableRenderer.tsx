@@ -296,7 +296,7 @@ export default function TableRenderer({ tableId }: TableRendererProps) {
 
     return table.columns.map((col) => ({
       accessorKey: col.id,
-      size: 150,
+      size: 240,
       header: () => (
         <div className="flex items-center space-x-2">
           <span>{col.name}</span>

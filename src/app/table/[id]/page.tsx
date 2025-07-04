@@ -263,6 +263,8 @@ export default function TablePage({ tableId }: { tableId: string }) {
     string,
     { type: "text" | "number"; op: string; value: any }
   >>({});
+  const [sort, setSort] = useState<{ columnId: string; order: "asc" | "desc" } | undefined>();
+
 
 
 
@@ -282,12 +284,13 @@ export default function TablePage({ tableId }: { tableId: string }) {
       // search: searchQuery, 
       search: selectedView?.config?.search ?? debouncedSearch,
       // sort: selectedView?.sort as { columnId: string; order: "asc" | "desc" } | undefined,
-      sort: selectedView?.config?.sort
-      ? {
-          columnId: (selectedView.config.sort as any)?.columnId,
-          order: (selectedView.config.sort as any)?.order,
-        }
-      : undefined,
+      // sort: selectedView?.config?.sort
+      // ? {
+      //     columnId: (selectedView.config.sort as any)?.columnId,
+      //     order: (selectedView.config.sort as any)?.order,
+      //   }
+      // : undefined,
+      sort: sort,
       filters: selectedView?.config?.filters ?? filters
     },
     {
@@ -364,7 +367,7 @@ export default function TablePage({ tableId }: { tableId: string }) {
     // accessorKey: col.id, // ✅ This must match the key in each row object (e.g., "cmc8oxj850004931czdjayteu")
     // size: 150,
     accessorKey: col.id ?? `col-${index}`, // fallback ID
-    size: 150,
+    size: 240,
     
     header: () => (
       <div className="flex items-center space-x-2">
@@ -444,7 +447,7 @@ const tableInstance = useReactTable({
   getRowId: (row) => row.id,
   columnResizeMode: 'onChange', // optional if you want to allow resizing
   defaultColumn: {
-    size: 150, // ← default fallback size for any new column
+    size: 240, // ← default fallback size for any new column
     filterFn: 'includesString',
   },
 });
@@ -568,7 +571,7 @@ const tableInstance = useReactTable({
                 config: {
                   search: searchQuery || undefined,
                   sort: sortConfig || undefined,
-                  filters,         // placeholder for now
+                  filters: filters || undefined,         // placeholder for now
                   hiddenColumns: [],   // placeholder for now
                 },
               });
@@ -623,7 +626,32 @@ const tableInstance = useReactTable({
                         className="border px-2 py-2 bg-gray-100"
                         style={{ boxSizing: "border-box" }}
                     >
-                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        <div className="flex flex-col">
+                          <div className="flex justify-between items-center">
+                            <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
+
+                            {/* Sorting dropdown */}
+                            <select
+                              className="text-xs ml-2"
+                              value={
+                                sort?.columnId === header.id ? sort.order : ""
+                              }
+                              onChange={(e) => {
+                                const order = e.target.value;
+                                setSort(
+                                  order
+                                    ? { columnId: header.id, order: order as "asc" | "desc" }
+                                    : undefined
+                                );
+                              }}
+                            >
+                              <option value="">⇅</option>
+                              <option value="asc">↑ A–Z / 1–9</option>
+                              <option value="desc">↓ Z–A / 9–1</option>
+                            </select>
+                          </div>
+                        </div>
+
                     </th>
                     ))}
                 </tr>
