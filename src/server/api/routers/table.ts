@@ -7,10 +7,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 
 export type ViewConfig = {
   filters?: Record<string, any>;
-  sort?: {
-    columnId: string;
-    order: 'asc' | 'desc';
-  };
+  sort?: { columnId: string; order: 'asc' | 'desc' }[];
   search?: string;
   hiddenColumns?: string[];
 };
@@ -221,27 +218,30 @@ export const tableRouter = createTRPCRouter({
         if (!table) throw new TRPCError({ code: "NOT_FOUND" });
 
         const rowsData = Array.from({ length: input.count }).map(() => {
-          const values: Record<string, string | number> = {};
-          for (const col of table.columns) {
-            values[col.id] =
-              col.type === ColumnType.NUMBER
-                ? faker.number.int({ min: 1, max: 1000 })
-                : faker.word.words({ count: 3 });
-          }
+        const values: Record<string, string | number> = {};
+        for (const col of table.columns) {
+          values[col.id] =
+            col.type === ColumnType.NUMBER
+              ? faker.number.int({ min: 1, max: 1000 })
+              : faker.word.words({ count: 3 });
+        }
 
-          return {
-            tableId: input.tableId,
-            values,
-          };
+        return {
+          tableId: input.tableId,
+          values,
+        };
+      });
+
+      const BATCH_SIZE = 1000;
+      for (let i = 0; i < rowsData.length; i += BATCH_SIZE) {
+        const chunk = rowsData.slice(i, i + BATCH_SIZE);
+        await ctx.db.row.createMany({
+          data: chunk,
         });
+      }
 
-        // Use transaction for performance
-        await ctx.db.$transaction(
-          rowsData.map((data) => ctx.db.row.create({ data }))
-        );
-
-        return { success: true };
-      }),
+      return { success: true };
+    }),
 
       // getRows: publicProcedure
       // .input(z.object({
@@ -296,10 +296,10 @@ export const tableRouter = createTRPCRouter({
           cursor: z.string().nullish(),
           limit: z.number().default(100),
           search: z.string().optional(), // optional, not fully implemented below
-          sort: z.object({
+          sort: z.array(z.object({
             columnId: z.string(),
             order: z.enum(["asc", "desc"]),
-          }).optional(),
+          })).optional(),
           filters: z.record(z.object({
             type: z.enum(["text", "number"]),
             op: z.string(), // "equals", "contains", ">", "<", etc.
@@ -394,9 +394,18 @@ export const tableRouter = createTRPCRouter({
 
           const whereClause = Prisma.sql`${Prisma.join(conditions, ' AND ')}`;
 
-          const sortClause = input.sort
-            ? Prisma.sql`ORDER BY jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${input.sort.columnId}'`)}) ${Prisma.raw(input.sort.order)}`
+          // const sortClause = input.sort
+          //   ? Prisma.sql`ORDER BY jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${input.sort.columnId}'`)}) ${Prisma.raw(input.sort.order)}`
+          //   : Prisma.sql`ORDER BY "Row"."id" ASC`;
+          const sortClause = input.sort?.length
+            ? Prisma.sql`ORDER BY ${Prisma.join(
+                input.sort.map((s) =>
+                  Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${s.columnId}'`)}) ${Prisma.raw(s.order)}`
+                ),
+                ','
+              )}`
             : Prisma.sql`ORDER BY "Row"."id" ASC`;
+
 
           const rows = await ctx.db.$queryRaw<Row[]>(Prisma.sql`
             SELECT * FROM "Row"
@@ -420,7 +429,9 @@ export const tableRouter = createTRPCRouter({
       name: z.string(),
       config: z.object({
         filters: z.record(z.any()),
-        sort: z.object({ columnId: z.string(), order: z.enum(["asc", "desc"]) }).optional(),
+        sort: z.array(
+          z.object({ columnId: z.string(), order: z.enum(["asc", "desc"]) })
+        ).optional(),
         search: z.string().optional(),
         hiddenColumns: z.array(z.string()).optional(),
       }),

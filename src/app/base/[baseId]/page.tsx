@@ -5,6 +5,7 @@ import { useState } from "react";
 import { api } from "~/trpc/react";
 import Link from "next/link";
 import TablePage from "~/app/_components/TablePage";
+import { useEffect } from "react";
 
 export default function BasePage() {
   const router = useRouter();
@@ -14,6 +15,10 @@ export default function BasePage() {
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
 
   const { data: base, isLoading, refetch } = api.base.getOne.useQuery({ baseId });
+
+  const [isCreatingTable, setIsCreatingTable] = useState(false);
+
+
   const createTable = api.table.create.useMutation({
     onSuccess: async (newTable) => {
       await refetch();
@@ -32,10 +37,19 @@ export default function BasePage() {
     },
   });
 
+  // const tables = base?.tables ?? [];
+  const [tables, setTables] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    if (base?.tables) {
+      setTables(base.tables);
+    }
+  }, [base?.tables]);
+
   if (isLoading) return <p className="p-4">Loading base...</p>;
   if (!base) return <p className="p-4">Base not found.</p>;
 
-  const tables = base?.tables ?? [];
+
+
   let currentTableId: string | null = activeTableId;
   if (!currentTableId && tables.length > 0 && tables[0]?.id) {
     currentTableId = tables[0].id;
@@ -110,15 +124,68 @@ export default function BasePage() {
         })}
 
         {/* New Table button */}
-        <button
+        {/* <button
           onClick={() => {
             const name = prompt("New table name?");
-            if (name) createTable.mutate({ baseId, name });
+            // if (name) createTable.mutate({ baseId, name });
+            if (name) {
+              setIsCreatingTable(true);
+              createTable.mutate(
+                { baseId, name },
+                {
+                  onSuccess: async (newTable) => {
+                    await refetch(); // re-fetch base
+                    setActiveTableId(newTable.id); // switch to new tab
+                    setIsCreatingTable(false);     // stop loading
+                  },
+                  onError: (err) => {
+                    alert("Failed to create table: " + err.message);
+                    setIsCreatingTable(false);
+                  },
+                }
+              );
+            }
+
           }}
           className="px-4 py-2 bg-blue-500 text-white rounded"
         >
           + New Table
-        </button>
+        </button> */}
+        {isCreatingTable ? (
+          <button
+            disabled
+            className="px-4 py-2 bg-gray-400 text-white rounded cursor-wait"
+          >
+            Creating...
+          </button>
+        ) : (
+          <button
+            onClick={() => {
+              const name = prompt("New table name?");
+              if (name) {
+                setIsCreatingTable(true);
+                createTable.mutate(
+                  { baseId, name },
+                  {
+                    onSuccess: async (newTable) => {
+                      await refetch();
+                      setActiveTableId(newTable.id);
+                      setIsCreatingTable(false);
+                    },
+                    onError: (err) => {
+                      alert("Failed to create table: " + err.message);
+                      setIsCreatingTable(false);
+                    },
+                  }
+                );
+              }
+            }}
+            className="px-4 py-2 bg-blue-500 text-white rounded"
+          >
+            + New Table
+          </button>
+        )}
+
       </div>
 
       {/* Render selected table in full */}

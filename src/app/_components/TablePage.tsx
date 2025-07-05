@@ -32,16 +32,18 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const { data: views } = api.table.getViews.useQuery({ tableId });
   const [selectedView, setSelectedView] = useState<TableView | null>(null);
   const [viewName, setViewName] = useState("");
-  const [sortConfig, setSortConfig] = useState<{ columnId: string; order: "asc" | "desc" } | undefined>(undefined);
+//   const [sortConfig, setSortConfig] = useState<{ columnId: string; order: "asc" | "desc" } | undefined>(undefined);
+  const [sortConfig, setSortConfig] = useState<typeof sort>([]);
   const [viewSavedMessage, setViewSavedMessage] = useState<string | null>(null);
   const [filters, setFilters] = useState<Record<
     string,
     { type: "text" | "number"; op: string; value: any }
   >>({});
-  const [sort, setSort] = useState<{ columnId: string; order: "asc" | "desc" } | undefined>();
+//   const [sort, setSort] = useState<{ columnId: string; order: "asc" | "desc" } | undefined>();
+//   const [sort, setSort] = useState<Array<{ columnId: string; order: "asc" | "desc" }>>([]);
+  const [sort, setSort] = useState<{ columnId: string; order: "asc" | "desc" }[]>([]);
 
-
-
+  const [addingRows, setAddingRows] = useState(false);
 
   // const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId });
   const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId }, {
@@ -76,8 +78,12 @@ export default function TablePage({ tableId }: { tableId: string }) {
     setRowCount(allRows.length + (data.pages.at(-1)?.nextCursor ? 1 : 0));
   }, [data]);
 
-
+  
   const [localEdits, setLocalEdits] = useState<Map<string, Map<string, string>>>(new Map());
+
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
+
+
   const updateCell = api.table.updateCell.useMutation();
   // const addColumn = api.table.addColumn.useMutation({ onSuccess: () => refetch() });
   const addColumn = api.table.addColumn.useMutation({
@@ -88,7 +94,18 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const renameColumn = api.table.renameColumn.useMutation({ onSuccess: () => refetch() });
   const deleteColumn = api.table.deleteColumn.useMutation({ onSuccess: () => refetch() });
   const addRow = api.table.addRow.useMutation({ onSuccess: () => refetch() });
-  const addFakeRows = api.table.addFakeRows.useMutation({ onSuccess: () => refetch() });
+  const addFakeRows = api.table.addFakeRows.useMutation({
+    onSuccess: async () => {
+        console.log("✅ 100k rows added successfully");
+        await utils.table.getTableById.invalidate({ tableId });
+        await refetch(); // <-- ensure visible update
+    },
+    onError: (err) => {
+        console.error("❌ Failed to add 100k rows:", err);
+        alert("Error adding 100k rows: " + err.message);
+    },
+    });
+
   const utils = api.useUtils();
   // const saveView = api.table.saveView.useMutation({
   //   onSuccess: () => {
@@ -215,6 +232,10 @@ export default function TablePage({ tableId }: { tableId: string }) {
 const tableInstance = useReactTable({
   data: flatRows,
   columns,
+  state: {
+    columnVisibility, // Track visibility
+  },
+  onColumnVisibilityChange: setColumnVisibility,
   getCoreRowModel: getCoreRowModel(),
   getFilteredRowModel: getFilteredRowModel(), 
   getRowId: (row) => row.id,
@@ -258,6 +279,22 @@ const tableInstance = useReactTable({
         </div>
       )}
       <div className="mb-4 space-x-2">
+        {/* 🔧 Column Visibility Toggles */}
+        <div className="mb-4 space-x-3 flex flex-wrap items-center">
+        <span className="font-medium mr-2">Toggle columns:</span>
+        {tableInstance.getAllLeafColumns().map((col) => (
+            <label key={col.id} className="text-sm mr-3">
+            <input
+                type="checkbox"
+                checked={col.getIsVisible()}
+                onChange={col.getToggleVisibilityHandler()}
+                className="mr-1"
+            />
+            {table.columns.find(c => c.id === col.id)?.name || col.id}
+            </label>
+        ))}
+        </div>
+
         <button
           onClick={() => {
             const name = prompt("Column name?");
@@ -280,15 +317,35 @@ const tableInstance = useReactTable({
         </button>
 
         <button
-          onClick={() => {
-            if (confirm("Are you sure you want to add 100,000 fake rows?")) {
-              addFakeRows.mutate({ tableId, count: 100000 });
-            }
-          }}
-          className="bg-purple-500 text-white px-3 py-1 rounded"
-        >
-          ⚡ Add 100k Rows
+            onClick={async () => {
+                if (confirm("Are you sure you want to add 100,000 fake rows?")) {
+                setAddingRows(true);
+                try {
+                    await addFakeRows.mutateAsync({ tableId, count: 100000 });
+                    await utils.table.getRows.invalidate(); // Clear cache
+                    await refetch(); // Re-fetch first page to see new rows
+                    console.log("✅ Rows added and data refreshed");
+                } catch (err) {
+                    console.error("❌ Failed to add rows:", err);
+                    alert("Failed to add rows: " + (err as Error).message);
+                } finally {
+                    setAddingRows(false);
+                }
+                }
+            }}
+            disabled={addingRows}
+            className="bg-purple-500 text-white px-3 py-1 rounded disabled:opacity-50"
+            >
+            {addingRows ? "Adding rows..." : "⚡ Add 100k Rows"}
         </button>
+
+        {/* progress indicator */}
+        {addingRows && (
+            <p className="text-sm text-gray-500 mt-2">
+                ⏳ Please wait... Generating 100,000 rows. This may take a few seconds.
+            </p>
+        )}
+
         <div className="mb-4">
           <input
             type="text"
@@ -309,16 +366,24 @@ const tableInstance = useReactTable({
               if (!view) {
                 setSelectedView(null);
                 setSearchQuery("");        // ✅ clear search
-                setSort(undefined);
+                // setSort(undefined);
+                setSort([]);
                 setFilters({})
-                // clear sortConfig if you're using it
+                setColumnVisibility({});
+                
               } else {
-                setSelectedView(view);
-
                 const config = view.config as ViewConfig;
+                setSelectedView(view);
                 setFilters(config.filters ?? {});
-                setSort(config.sort ?? undefined);
+                // setSort(config.sort ?? undefined);
+                setSort(Array.isArray(config.sort) ? config.sort : []);
                 setSearchQuery(config.search ?? "");
+
+                const hiddenCols = config.hiddenColumns ?? [];
+                const visibility = Object.fromEntries(
+                table?.columns.map((col) => [col.id, !hiddenCols.includes(col.id)]) ?? []
+                );
+                setColumnVisibility(visibility);
                                 
               }
             }}
@@ -346,15 +411,18 @@ const tableInstance = useReactTable({
               if (!viewName.trim()) return alert("Enter a name");
 
               console.log("Saving view with sort:", sort);
+              const hiddenColumns = Object.entries(columnVisibility)
+                .filter(([, isVisible]) => !isVisible)
+                .map(([colId]) => colId);
 
               saveView.mutate({
                 tableId,
                 name: viewName.trim(),
                 config: {
                   search: searchQuery || undefined,
-                  sort: sortConfig,
-                  filters: filters || undefined,         // placeholder for now
-                  hiddenColumns: [],   // placeholder for now
+                  sort: Array.isArray(sortConfig) ? sortConfig : sortConfig ? [sortConfig] : [],
+                  filters: filters || undefined,        
+                  hiddenColumns,
                 },
               });
               
@@ -413,19 +481,12 @@ const tableInstance = useReactTable({
                               <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
 
                               {/* Sorting dropdown */}
-                              <select
+                              {/* <select
                                 className="text-xs ml-2"
                                 value={
                                   sort?.columnId === header.id ? sort.order : ""
                                 }
-                                // onChange={(e) => {
-                                //   const order = e.target.value;
-                                //   setSort(
-                                //     order
-                                //       ? { columnId: header.id, order: order as "asc" | "desc" }
-                                //       : undefined
-                                //   );
-                                // }}
+                                
                                 onChange={(e) => {
                                   const order = e.target.value;
                                   const newSort = order
@@ -436,7 +497,18 @@ const tableInstance = useReactTable({
                                   setSortConfig(newSort);
                                 }}
 
-                              >
+                              > */}
+                              <select
+                                value={sort.find(s => s.columnId === header.id)?.order || ""}
+                                onChange={(e) => {
+                                    const order = e.target.value as "asc" | "desc" | "";
+                                    setSort((prev) => {
+                                    const other = prev.filter((s) => s.columnId !== header.id);
+                                    return order ? [...other, { columnId: header.id, order }] : other;
+                                    });
+                                }}
+                                >
+
                                 <option value="">⇅</option>
                                 <option value="asc">↑ A–Z / 1–9</option>
                                 <option value="desc">↓ Z–A / 9–1</option>
