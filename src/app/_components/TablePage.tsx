@@ -14,6 +14,9 @@ import React from 'react';
 import { useDebounce } from 'use-debounce';
 import type { TableView } from '@prisma/client';
 import type { ViewConfig } from '~/server/api/routers/table';
+import GlobalFilterPopover from '~/app/_components/GlobalFilterPopover';
+import GlobalSortPopover from './GlobalSortPopover';
+import GlobalColVisibilityPopover from '~/app/_components/GlobalColVisibilityPopover';
 
 
 type TableRow = {
@@ -39,16 +42,26 @@ export default function TablePage({ tableId }: { tableId: string }) {
     string,
     { type: "text" | "number"; op: string; value: any }
   >>({});
-//   const [sort, setSort] = useState<{ columnId: string; order: "asc" | "desc" } | undefined>();
-//   const [sort, setSort] = useState<Array<{ columnId: string; order: "asc" | "desc" }>>([]);
   const [sort, setSort] = useState<{ columnId: string; order: "asc" | "desc" }[]>([]);
-
   const [addingRows, setAddingRows] = useState(false);
 
   // const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId });
   const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId }, {
     refetchOnWindowFocus: false, // prevents double-fetching
   });
+
+  
+  const parentRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 47,
+    measureElement: (el) => el.getBoundingClientRect().height,
+    overscan: 10,
+  });
+
+  const virtualRows = virtualizer.getVirtualItems();
+  const totalHeight = virtualizer.getTotalSize();
 
   const {
     data,
@@ -57,10 +70,7 @@ export default function TablePage({ tableId }: { tableId: string }) {
     isFetchingNextPage,
   } = api.table.getRows.useInfiniteQuery(
     { tableId, 
-      limit: 1000, 
-    //   search: (selectedView?.config as ViewConfig | undefined)?.search ?? debouncedSearch,
-    //   sort: sort,
-    //   filters: selectedView?.config?.filters ?? filters
+      limit: 100, 
     search: isViewConfig(selectedView?.config) ? selectedView.config.search ?? debouncedSearch : debouncedSearch,
     sort: isViewConfig(selectedView?.config) ? selectedView.config.sort ?? sort : sort,
     filters: isViewConfig(selectedView?.config) ? selectedView.config.filters ?? filters : filters,
@@ -71,13 +81,23 @@ export default function TablePage({ tableId }: { tableId: string }) {
       enabled: !!tableId,
     }
   );
+  // const { data, refetch, isFetching } = api.table.getRows.useQuery({
+  //   tableId,
+  //   start: virtualizer.getVirtualItems()[0]?.index ?? 0,
+  //   limit: 100,
+  //   sort: isViewConfig(selectedView?.config) ? selectedView.config.sort ?? sort : sort,,
+  //   search: isViewConfig(selectedView?.config) ? selectedView.config.search ?? debouncedSearch : debouncedSearch,
+  //   filters: isViewConfig(selectedView?.config) ? selectedView.config.filters ?? filters : filters,,
+  // });
+
+  
+
 
   useEffect(() => {
     if (!data) return;
     const allRows = data.pages.flatMap((p) => p.rows);
     setRowCount(allRows.length + (data.pages.at(-1)?.nextCursor ? 1 : 0));
   }, [data]);
-
   
   const [localEdits, setLocalEdits] = useState<Map<string, Map<string, string>>>(new Map());
 
@@ -107,11 +127,6 @@ export default function TablePage({ tableId }: { tableId: string }) {
     });
 
   const utils = api.useUtils();
-  // const saveView = api.table.saveView.useMutation({
-  //   onSuccess: () => {
-  //     utils.table.getViews.invalidate({ tableId }); // refresh views after save
-  //   },
-  // });
 
   const saveView = api.table.saveView.useMutation({
   onSuccess: async () => {
@@ -154,8 +169,6 @@ export default function TablePage({ tableId }: { tableId: string }) {
   if (!table) return [];
 
   return table.columns.map((col, index) => ({
-    // accessorKey: col.id, // ✅ This must match the key in each row object (e.g., "cmc8oxj850004931czdjayteu")
-    // size: 150,
     accessorKey: col.id ?? `col-${index}`, // fallback ID
     size: 240,
     
@@ -229,6 +242,8 @@ export default function TablePage({ tableId }: { tableId: string }) {
 }, [table, tableId, updateCell]);
 
 
+
+
 const tableInstance = useReactTable({
   data: flatRows,
   columns,
@@ -246,17 +261,6 @@ const tableInstance = useReactTable({
   },
 });
 
-  const parentRef = useRef<HTMLDivElement>(null);
-  const virtualizer = useVirtualizer({
-    count: rowCount,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 47,
-    measureElement: (el) => el.getBoundingClientRect().height,
-    overscan: 10,
-  });
-
-  const virtualRows = virtualizer.getVirtualItems();
-  const totalHeight = virtualizer.getTotalSize();
 
   useEffect(() => {
     const last = virtualRows.at(-1);
@@ -270,6 +274,8 @@ const tableInstance = useReactTable({
   if (isLoading || !table?.columns?.length) return <p className="p-4">Loading table...</p>;
   if (!table) return <p className="p-4">Table not found.</p>;
 
+  
+
   return (
     <div className="p-4">
       <h1 className="text-xl font-bold mb-4">{table.name}</h1>
@@ -279,21 +285,18 @@ const tableInstance = useReactTable({
         </div>
       )}
       <div className="mb-4 space-x-2">
-        {/* 🔧 Column Visibility Toggles */}
-        <div className="mb-4 space-x-3 flex flex-wrap items-center">
-        <span className="font-medium mr-2">Toggle columns:</span>
-        {tableInstance.getAllLeafColumns().map((col) => (
-            <label key={col.id} className="text-sm mr-3">
-            <input
-                type="checkbox"
-                checked={col.getIsVisible()}
-                onChange={col.getToggleVisibilityHandler()}
-                className="mr-1"
-            />
-            {table.columns.find(c => c.id === col.id)?.name || col.id}
-            </label>
-        ))}
-        </div>
+
+        <GlobalColVisibilityPopover
+          columns={table.columns}
+          visibility={columnVisibility}
+          onToggle={(columnId, visible) => {
+            setColumnVisibility((prev) => ({
+              ...prev,
+              [columnId]: visible,
+            }));
+          }}
+        />
+
 
         <button
           onClick={() => {
@@ -338,6 +341,18 @@ const tableInstance = useReactTable({
             >
             {addingRows ? "Adding rows..." : "⚡ Add 100k Rows"}
         </button>
+        <GlobalFilterPopover
+          columns={table.columns}
+          filters={filters}
+          setFilters={setFilters}
+        />
+        <GlobalSortPopover
+          columns={table.columns}
+          sort={sort}
+          setSort={setSort}
+        />
+
+
 
         {/* progress indicator */}
         {addingRows && (
@@ -479,118 +494,11 @@ const tableInstance = useReactTable({
                           <div className="flex flex-col">
                             <div className="flex justify-between items-center">
                               <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
-
-                              {/* Sorting dropdown */}
-                              {/* <select
-                                className="text-xs ml-2"
-                                value={
-                                  sort?.columnId === header.id ? sort.order : ""
-                                }
-                                
-                                onChange={(e) => {
-                                  const order = e.target.value;
-                                  const newSort = order
-                                    ? { columnId: header.id, order: order as "asc" | "desc" }
-                                    : undefined;
-                                  console.log("sort selected:", newSort); // <-- optional debug
-                                  setSort(newSort);
-                                  setSortConfig(newSort);
-                                }}
-
-                              > */}
-                              <select
-                                value={sort.find(s => s.columnId === header.id)?.order || ""}
-                                onChange={(e) => {
-                                    const order = e.target.value as "asc" | "desc" | "";
-                                    setSort((prev) => {
-                                    const other = prev.filter((s) => s.columnId !== header.id);
-                                    return order ? [...other, { columnId: header.id, order }] : other;
-                                    });
-                                }}
-                                >
-
-                                <option value="">⇅</option>
-                                <option value="asc">↑ A–Z / 1–9</option>
-                                <option value="desc">↓ Z–A / 9–1</option>
-                              </select>
                             </div>
                           </div>
 
                     </th>
                     ))}
-                </tr>
-
-                {/* ✅ Filter row below headers */}
-                <tr>
-                    {group.headers.map((header) => {
-                      const col = table.columns.find(c => c.id === header.id);
-                      if (!col) return <th key={header.id}></th>;
-                      // if (!col) return <th key={header.id} className="border px-2 py-1" />;
-
-                      // Ensure type is lowercase 'number' or 'text'
-                      const colType = col.type.toLowerCase() as "number" | "text";
-
-                      return (
-                        <th key={header.id} className="border px-2 py-1">
-                          <div className="space-y-1">
-                            {/* Operator select */}
-                            <select
-                              className="w-full text-sm"
-                              value={filters[header.id]?.op || ""}
-                              onChange={(e) => {
-                                const op = e.target.value;
-                                setFilters((prev) => ({
-                                  ...prev,
-                                  [header.id]: {
-                                    type: colType,
-                                    op,
-                                    value: op.includes("empty") ? null : prev[header.id]?.value ?? "",
-                                  },
-                                }));
-                              }}
-                            >
-                              <option value="">--</option>
-
-                              {colType === "number" ? (
-                                <>
-                                  <option value=">">greater than</option>
-                                  <option value="<">less than</option>
-                                </>
-                              ) : (
-                                <>
-                                  <option value="equals">equals</option>
-                                  <option value="contains">contains</option>
-                                  <option value="not_contains">not contains</option>
-                                  <option value="is_empty">is empty</option>
-                                  <option value="is_not_empty">is not empty</option>
-                                </>
-                              )}
-                            </select>
-
-                            {/* Value input, only show if not empty check */}
-                            {typeof filters[header.id]?.op === "string" &&
-                            !filters[header.id]!.op!.includes("empty") && (
-                              <input
-                                className="w-full text-sm"
-                                type={colType === "number" ? "number" : "text"}
-                                value={filters[header.id]?.value ?? ""}
-                                onChange={(e) => {
-                                  const value = colType === "number" ? Number(e.target.value) : e.target.value;
-                                  setFilters((prev) => ({
-                                    ...prev,
-                                    [header.id]: {
-                                      type: colType,
-                                      op: prev[header.id]?.op ?? "",
-                                      value,
-                                    },
-                                  }));
-                                }}
-                              />
-                            )}
-                          </div>
-                        </th>
-                      );
-                    })}
                 </tr>
                 </React.Fragment>
             ))}
@@ -609,9 +517,9 @@ const tableInstance = useReactTable({
                 <col
                   key={header.id}
                   style={{
-                    width: `${header.getSize?.() ?? 150}px`,
-                    minWidth: `${header.getSize?.() ?? 150}px`,
-                    maxWidth: `${header.getSize?.() ?? 150}px`,
+                    width: `${header.getSize() ?? 150}px`,
+                    minWidth: `${header.getSize() ?? 150}px`,
+                    maxWidth: `${header.getSize() ?? 150}px`,
                   }}
                 />
               ))}
@@ -627,6 +535,7 @@ const tableInstance = useReactTable({
                   <tr
                     key={row.id}
                     ref={virtualizer.measureElement}
+                    className="hover:bg-gray-100 transition-colors"
                     style={{
                       position: "absolute",
                       top: 0,

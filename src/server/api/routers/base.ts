@@ -30,24 +30,6 @@ export const baseRouter = createTRPCRouter({
     });
   }),
 
-  // create: protectedProcedure
-  //   .input(
-  //     z.object({
-  //       name: z.string().min(1),
-  //     }),
-  //   )
-  //   .mutation(async ({ ctx, input }) => {
-  //     const newBase = await ctx.db.base.create({
-  //       data: {
-  //         name: input.name,
-  //         userId: ctx.session.user.id,
-  //       },
-  //     });
-
-  //     console.log("Creating base for user:", ctx.session?.user?.id);
-  //     return newBase;
-  //   }),
-
   create: protectedProcedure
     .input(
       z.object({
@@ -56,7 +38,7 @@ export const baseRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        console.log("🧪 Creating base for user:", ctx.session?.user?.id);
+        console.log("Creating base for user:", ctx.session?.user?.id);
         const newBase = await ctx.db.base.create({
           data: {
             name: input.name,
@@ -78,10 +60,10 @@ export const baseRouter = createTRPCRouter({
         where: { id: input.baseId },
         include: {
           tables: {
-            include: {
-              columns: true,
-              rows: true,
-            },
+            // include: {
+            //   columns: true,
+            //   rows: true,
+            // },
           },
         },
       });

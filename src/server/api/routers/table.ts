@@ -243,57 +243,11 @@ export const tableRouter = createTRPCRouter({
       return { success: true };
     }),
 
-      // getRows: publicProcedure
-      // .input(z.object({
-      //   tableId: z.string(),
-      //   cursor: z.string().nullish(),
-      //   limit: z.number().default(100),
-      //   search: z.string().optional(),       // 🆕 search term
-      //   sort: z.object({
-      //     columnId: z.string(),
-      //     order: z.enum(["asc", "desc"]),
-      //   }).optional(),                       // 🆕 sorting
-      // }))
-      // .query(async ({ ctx, input }) => {
-      //   const table = await ctx.db.table.findUnique({
-      //     where: { id: input.tableId },
-      //     include: { columns: true },
-      //   });
-
-      //   if (!table) throw new Error("Table not found");
-
-      //   const rows = await ctx.db.row.findMany({
-      //     where: {
-      //       tableId: input.tableId,
-      //       ...(input.search
-      //         ? {
-      //             OR: table.columns.map((col) => ({
-      //               values: {
-      //                 path: [col.id],
-      //                 string_contains: input.search,
-      //               },
-      //             })),
-      //           }
-      //         : {}),
-      //     },
-      //     take: input.limit + 1,
-      //     skip: input.cursor ? 1 : 0,
-      //     cursor: input.cursor ? { id: input.cursor } : undefined,
-      //     orderBy: { id: "asc" },
-      //   });
-
-      //   const nextCursor = rows.length > input.limit ? rows.pop()!.id : null;
-
-      //   return {
-      //     rows,
-      //     nextCursor,
-      //   };
-      // }),
-
       getRows: publicProcedure
         .input(z.object({
           tableId: z.string(),
           cursor: z.string().nullish(),
+          start: z.number().default(0),
           limit: z.number().default(100),
           search: z.string().optional(), // optional, not fully implemented below
           sort: z.array(z.object({
@@ -387,7 +341,7 @@ export const tableRouter = createTRPCRouter({
               Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${col.id}'`)}) ILIKE ${`%${input.search}%`}`
             );
 
-            // 👇 Wrap search conditions in parentheses and join with OR
+            // Wrap search conditions in parentheses and join with OR
             const searchBlock = Prisma.sql`(${Prisma.join(searchTerms, ' OR ')})`;
             conditions.push(searchBlock);
           }
@@ -400,20 +354,27 @@ export const tableRouter = createTRPCRouter({
           const sortClause = input.sort?.length
             ? Prisma.sql`ORDER BY ${Prisma.join(
                 input.sort.map((s) =>
-                  Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${s.columnId}'`)}) ${Prisma.raw(s.order)}`
+                  Prisma.sql`LOWER(jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${s.columnId}'`)})) ${Prisma.raw(s.order)}`
                 ),
                 ','
               )}`
             : Prisma.sql`ORDER BY "Row"."id" ASC`;
 
 
+          // const rows = await ctx.db.$queryRaw<Row[]>(Prisma.sql`
+          //   SELECT * FROM "Row"
+          //   WHERE ${whereClause}
+          //   ${sortClause}
+          //   LIMIT ${input.limit + 1}
+          // `);
+
           const rows = await ctx.db.$queryRaw<Row[]>(Prisma.sql`
             SELECT * FROM "Row"
             WHERE ${whereClause}
             ${sortClause}
-            LIMIT ${input.limit + 1}
+            OFFSET ${input.start}
+            LIMIT ${input.limit}
           `);
-
 
           const nextCursor = rows.length > input.limit ? rows.pop()!.id : null;
 
