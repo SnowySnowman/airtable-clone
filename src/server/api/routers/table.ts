@@ -150,18 +150,42 @@ export const tableRouter = createTRPCRouter({
       return { success: true };
     }),
 
-  addColumn: protectedProcedure
+  // addColumn: protectedProcedure
+  //   .input(z.object({
+  //     tableId: z.string(),
+  //     name: z.string(),
+  //     type: z.enum(['text', 'number']), // or whatever types you support
+  //   }))
+  //   .mutation(async ({ input, ctx }) => {
+  //     const existingColumns = await ctx.db.column.findMany({
+  //       where: { tableId: input.tableId },
+  //     });
+
+  //     return ctx.db.column.create({
+  //       data: {
+  //         tableId: input.tableId,
+  //         name: input.name,
+  //         type: input.type.toUpperCase() as ColumnType,
+  //         order: existingColumns.length,
+  //       },
+  //     });
+
+  //   }),
+
+  addColumnAndPopulate: protectedProcedure
     .input(z.object({
       tableId: z.string(),
       name: z.string(),
-      type: z.enum(['text', 'number']), // or whatever types you support
+      type: z.enum(['text', 'number']),
+      defaultValue: z.string().optional(),  // optional
     }))
     .mutation(async ({ input, ctx }) => {
+      const { tableId, name, type, defaultValue = "" } = input;
       const existingColumns = await ctx.db.column.findMany({
         where: { tableId: input.tableId },
       });
 
-      return ctx.db.column.create({
+      const column = await ctx.db.column.create({
         data: {
           tableId: input.tableId,
           name: input.name,
@@ -170,7 +194,25 @@ export const tableRouter = createTRPCRouter({
         },
       });
 
+      // Bulk update all rows with the new column value (e.g., empty string or default)
+      // await ctx.db.row.updateMany({
+      //   where: { tableId },
+      //   data: {
+      //     values: {
+      //       push: { [column.id]: defaultValue },
+      //     },
+      //   },
+      // });
+      await ctx.db.$executeRawUnsafe(`
+        UPDATE "Row"
+        SET "values" = jsonb_set("values", '{${column.id}}', to_jsonb(''::text), true)
+        WHERE "tableId" = '${tableId}'
+      `);
+
+
+      return column;
     }),
+
 
     renameColumn: protectedProcedure
     .input(z.object({
@@ -242,147 +284,203 @@ export const tableRouter = createTRPCRouter({
 
       return { success: true };
     }),
+    
+    getRows: publicProcedure
+      .input(z.object({
+        tableId: z.string(),
+        cursor: z.string().optional(), // 👈 for keyset pagination
+        limit: z.number().default(50),
+        search: z.string().optional(),
+        sort: z.array(z.object({
+          columnId: z.string(),
+          order: z.enum(["asc", "desc"]),
+        })).optional(),
+        filters: z.record(z.object({
+          type: z.enum(["text", "number"]),
+          op: z.string(),
+          value: z.any(),
+        })).optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        // ... filters and whereClause stay the same ...
 
-      getRows: publicProcedure
-        .input(z.object({
-          tableId: z.string(),
-          cursor: z.string().nullish(),
-          start: z.number().default(0),
-          limit: z.number().default(100),
-          search: z.string().optional(), // optional, not fully implemented below
-          sort: z.array(z.object({
-            columnId: z.string(),
-            order: z.enum(["asc", "desc"]),
-          })).optional(),
-          filters: z.record(z.object({
-            type: z.enum(["text", "number"]),
-            op: z.string(), // "equals", "contains", ">", "<", etc.
-            value: z.any(),
-          })).optional(),
-        }))
-        .query(async ({ ctx, input }) => {
-          const table = await ctx.db.table.findUnique({
-            where: { id: input.tableId },
-            include: { columns: true },
-          });
-          if (!table) throw new Error("Table not found");
+        const limit = input.limit ?? 50;
 
-          const filterConditions: Prisma.Sql[] = [];
+        const afterCursor = input.cursor
+          ? Prisma.sql`AND "Row"."id" > ${input.cursor}`
+          : Prisma.sql``;
 
-          if (input.filters) {
-            for (const [columnId, filter] of Object.entries(input.filters)) {
-              // const path = Prisma.sql`${columnId}`;
-              const jsonField = Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${columnId}'`)})`;
+        const conditions: Prisma.Sql[] = [Prisma.sql`"tableId" = ${input.tableId}`];
 
-              if (filter.type === "text") {
-                const value = filter.value;
-                if (filter.op === "equals") {
-                  filterConditions.push(Prisma.sql`${jsonField} = ${value}`);
-                } else if (filter.op === "contains") {
-                  filterConditions.push(Prisma.sql`${jsonField} ILIKE ${`%${value}%`}`);
-                } else if (filter.op === "not_contains") {
-                  filterConditions.push(Prisma.sql`${jsonField} NOT ILIKE ${`%${value}%`}`);
-                } else if (filter.op === "is_empty") {
-                  filterConditions.push(Prisma.sql`(${jsonField} IS NULL OR ${jsonField} = '')`);
-                } else if (filter.op === "is_not_empty") {
-                  filterConditions.push(Prisma.sql`(${jsonField} IS NOT NULL AND ${jsonField} <> '')`);
-                }
-              } else if (filter.type === "number") {
-                const numVal = Number(filter.value);
-                if (filter.op === "=") {
-                  filterConditions.push(Prisma.sql`${jsonField}::numeric = ${numVal}`);
-                } else if (filter.op === ">") {
-                  filterConditions.push(Prisma.sql`${jsonField}::numeric > ${numVal}`);
-                } else if (filter.op === "<") {
-                  filterConditions.push(Prisma.sql`${jsonField}::numeric < ${numVal}`);
-                } else if (filter.op === "is_empty") {
-                  filterConditions.push(Prisma.sql`${jsonField} IS NULL`);
-                } else if (filter.op === "is_not_empty") {
-                  filterConditions.push(Prisma.sql`${jsonField} IS NOT NULL`);
-                }
-              }
-            }
-          }
+        const whereClause = Prisma.sql`${Prisma.join(conditions, ' AND ')}`;
 
-          const conditions: Prisma.Sql[] = [Prisma.sql`"tableId" = ${input.tableId}`];
+        const sortClause = input.sort?.length
+          ? Prisma.sql`ORDER BY ${Prisma.join(
+              input.sort.map((s) =>
+                Prisma.sql`LOWER(jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${s.columnId}'`)}) ) ${Prisma.raw(s.order)}`
+              ),
+              ','
+            )}`
+          : Prisma.sql`ORDER BY "Row"."id" ASC`;
 
-          // Add filter conditions
-          if (input.filters) {
-            for (const [columnId, filter] of Object.entries(input.filters)) {
-              const jsonField = Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${columnId}'`)})`;
+        const rows = await ctx.db.$queryRaw<Row[]>(Prisma.sql`
+          SELECT * FROM "Row"
+          WHERE ${whereClause}
+          ${afterCursor}
+          ${sortClause}
+          LIMIT ${limit + 1}
+        `);
 
-              if (filter.type === "text") {
-                const value = filter.value;
-                if (filter.op === "equals") {
-                  conditions.push(Prisma.sql`${jsonField} = ${value}`);
-                } else if (filter.op === "contains") {
-                  conditions.push(Prisma.sql`${jsonField} ILIKE ${`%${value}%`}`);
-                } else if (filter.op === "not_contains") {
-                  conditions.push(Prisma.sql`${jsonField} NOT ILIKE ${`%${value}%`}`);
-                } else if (filter.op === "is_empty") {
-                  conditions.push(Prisma.sql`(${jsonField} IS NULL OR ${jsonField} = '')`);
-                } else if (filter.op === "is_not_empty") {
-                  conditions.push(Prisma.sql`(${jsonField} IS NOT NULL AND ${jsonField} <> '')`);
-                }
-              } else if (filter.type === "number") {
-                const numVal = Number(filter.value);
-                if (filter.op === ">") {
-                  conditions.push(Prisma.sql`${jsonField}::numeric > ${numVal}`);
-                } else if (filter.op === "<") {
-                  conditions.push(Prisma.sql`${jsonField}::numeric < ${numVal}`);
-                }
-              }
-            }
-          }
+        const hasNextPage = rows.length > limit;
+        const trimmedRows = rows.slice(0, limit);
 
-          // Add global search — grouped as a single OR block
-          if (input.search && input.search.trim() !== "") {
-            const searchTerms = table.columns.map((col) =>
-              Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${col.id}'`)}) ILIKE ${`%${input.search}%`}`
-            );
-
-            // Wrap search conditions in parentheses and join with OR
-            const searchBlock = Prisma.sql`(${Prisma.join(searchTerms, ' OR ')})`;
-            conditions.push(searchBlock);
-          }
-
-          const whereClause = Prisma.sql`${Prisma.join(conditions, ' AND ')}`;
-
-          // const sortClause = input.sort
-          //   ? Prisma.sql`ORDER BY jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${input.sort.columnId}'`)}) ${Prisma.raw(input.sort.order)}`
-          //   : Prisma.sql`ORDER BY "Row"."id" ASC`;
-          const sortClause = input.sort?.length
-            ? Prisma.sql`ORDER BY ${Prisma.join(
-                input.sort.map((s) =>
-                  Prisma.sql`LOWER(jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${s.columnId}'`)})) ${Prisma.raw(s.order)}`
-                ),
-                ','
-              )}`
-            : Prisma.sql`ORDER BY "Row"."id" ASC`;
+        return {
+          rows: trimmedRows,
+          nextCursor: hasNextPage ? trimmedRows[trimmedRows.length - 1]?.id : undefined,
+        };
+      }),
 
 
-          // const rows = await ctx.db.$queryRaw<Row[]>(Prisma.sql`
-          //   SELECT * FROM "Row"
-          //   WHERE ${whereClause}
-          //   ${sortClause}
-          //   LIMIT ${input.limit + 1}
-          // `);
+      // getRows: publicProcedure
+      //   .input(z.object({
+      //     tableId: z.string(),
+      //     cursor: z.string().nullish(),
+      //     start: z.number().default(0),
+      //     limit: z.number().default(100),
+      //     search: z.string().optional(), // optional, not fully implemented below
+      //     sort: z.array(z.object({
+      //       columnId: z.string(),
+      //       order: z.enum(["asc", "desc"]),
+      //     })).optional(),
+      //     filters: z.record(z.object({
+      //       type: z.enum(["text", "number"]),
+      //       op: z.string(), // "equals", "contains", ">", "<", etc.
+      //       value: z.any(),
+      //     })).optional(),
+      //   }))
+      //   .query(async ({ ctx, input }) => {
+      //     const table = await ctx.db.table.findUnique({
+      //       where: { id: input.tableId },
+      //       include: { columns: true },
+      //     });
+      //     if (!table) throw new Error("Table not found");
 
-          const rows = await ctx.db.$queryRaw<Row[]>(Prisma.sql`
-            SELECT * FROM "Row"
-            WHERE ${whereClause}
-            ${sortClause}
-            OFFSET ${input.start}
-            LIMIT ${input.limit}
-          `);
+      //     const filterConditions: Prisma.Sql[] = [];
 
-          const nextCursor = rows.length > input.limit ? rows.pop()!.id : null;
+      //     if (input.filters) {
+      //       for (const [columnId, filter] of Object.entries(input.filters)) {
+      //         // const path = Prisma.sql`${columnId}`;
+      //         const jsonField = Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${columnId}'`)})`;
 
-          return {
-            rows,
-            nextCursor,
-          };
-        }),
+      //         if (filter.type === "text") {
+      //           const value = filter.value;
+      //           if (filter.op === "equals") {
+      //             filterConditions.push(Prisma.sql`${jsonField} = ${value}`);
+      //           } else if (filter.op === "contains") {
+      //             filterConditions.push(Prisma.sql`${jsonField} ILIKE ${`%${value}%`}`);
+      //           } else if (filter.op === "not_contains") {
+      //             filterConditions.push(Prisma.sql`${jsonField} NOT ILIKE ${`%${value}%`}`);
+      //           } else if (filter.op === "is_empty") {
+      //             filterConditions.push(Prisma.sql`(${jsonField} IS NULL OR ${jsonField} = '')`);
+      //           } else if (filter.op === "is_not_empty") {
+      //             filterConditions.push(Prisma.sql`(${jsonField} IS NOT NULL AND ${jsonField} <> '')`);
+      //           }
+      //         } else if (filter.type === "number") {
+      //           const numVal = Number(filter.value);
+      //           if (filter.op === "=") {
+      //             filterConditions.push(Prisma.sql`${jsonField}::numeric = ${numVal}`);
+      //           } else if (filter.op === ">") {
+      //             filterConditions.push(Prisma.sql`${jsonField}::numeric > ${numVal}`);
+      //           } else if (filter.op === "<") {
+      //             filterConditions.push(Prisma.sql`${jsonField}::numeric < ${numVal}`);
+      //           } else if (filter.op === "is_empty") {
+      //             filterConditions.push(Prisma.sql`${jsonField} IS NULL`);
+      //           } else if (filter.op === "is_not_empty") {
+      //             filterConditions.push(Prisma.sql`${jsonField} IS NOT NULL`);
+      //           }
+      //         }
+      //       }
+      //     }
+
+      //     const conditions: Prisma.Sql[] = [Prisma.sql`"tableId" = ${input.tableId}`];
+
+      //     // Add filter conditions
+      //     if (input.filters) {
+      //       for (const [columnId, filter] of Object.entries(input.filters)) {
+      //         const jsonField = Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${columnId}'`)})`;
+
+      //         if (filter.type === "text") {
+      //           const value = filter.value;
+      //           if (filter.op === "equals") {
+      //             conditions.push(Prisma.sql`${jsonField} = ${value}`);
+      //           } else if (filter.op === "contains") {
+      //             conditions.push(Prisma.sql`${jsonField} ILIKE ${`%${value}%`}`);
+      //           } else if (filter.op === "not_contains") {
+      //             conditions.push(Prisma.sql`${jsonField} NOT ILIKE ${`%${value}%`}`);
+      //           } else if (filter.op === "is_empty") {
+      //             conditions.push(Prisma.sql`(${jsonField} IS NULL OR ${jsonField} = '')`);
+      //           } else if (filter.op === "is_not_empty") {
+      //             conditions.push(Prisma.sql`(${jsonField} IS NOT NULL AND ${jsonField} <> '')`);
+      //           }
+      //         } else if (filter.type === "number") {
+      //           const numVal = Number(filter.value);
+      //           if (filter.op === ">") {
+      //             conditions.push(Prisma.sql`${jsonField}::numeric > ${numVal}`);
+      //           } else if (filter.op === "<") {
+      //             conditions.push(Prisma.sql`${jsonField}::numeric < ${numVal}`);
+      //           }
+      //         }
+      //       }
+      //     }
+
+      //     // Add global search — grouped as a single OR block
+      //     if (input.search && input.search.trim() !== "") {
+      //       const searchTerms = table.columns.map((col) =>
+      //         Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${col.id}'`)}) ILIKE ${`%${input.search}%`}`
+      //       );
+
+      //       // Wrap search conditions in parentheses and join with OR
+      //       const searchBlock = Prisma.sql`(${Prisma.join(searchTerms, ' OR ')})`;
+      //       conditions.push(searchBlock);
+      //     }
+
+      //     const whereClause = Prisma.sql`${Prisma.join(conditions, ' AND ')}`;
+
+      //     // const sortClause = input.sort
+      //     //   ? Prisma.sql`ORDER BY jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${input.sort.columnId}'`)}) ${Prisma.raw(input.sort.order)}`
+      //     //   : Prisma.sql`ORDER BY "Row"."id" ASC`;
+      //     const sortClause = input.sort?.length
+      //       ? Prisma.sql`ORDER BY ${Prisma.join(
+      //           input.sort.map((s) =>
+      //             Prisma.sql`LOWER(jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${s.columnId}'`)})) ${Prisma.raw(s.order)}`
+      //           ),
+      //           ','
+      //         )}`
+      //       : Prisma.sql`ORDER BY "Row"."id" ASC`;
+
+
+      //     // const rows = await ctx.db.$queryRaw<Row[]>(Prisma.sql`
+      //     //   SELECT * FROM "Row"
+      //     //   WHERE ${whereClause}
+      //     //   ${sortClause}
+      //     //   LIMIT ${input.limit + 1}
+      //     // `);
+
+      //     const rows = await ctx.db.$queryRaw<Row[]>(Prisma.sql`
+      //       SELECT * FROM "Row"
+      //       WHERE ${whereClause}
+      //       ${sortClause}
+      //       OFFSET ${input.start}
+      //       LIMIT ${input.limit}
+      //     `);
+
+      //     const nextCursor = rows.length > input.limit ? rows.pop()!.id : null;
+
+      //     return {
+      //       rows,
+      //       totalRowCount: number,
+      //     };
+      //   }),
 
     saveView: publicProcedure
     .input(z.object({

@@ -46,58 +46,115 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const [addingRows, setAddingRows] = useState(false);
 
   // const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId });
-  const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId }, {
+  const { data: table, isLoading, refetch: refetchTable } = api.table.getTableById.useQuery({ tableId }, {
     refetchOnWindowFocus: false, // prevents double-fetching
   });
+  const [rowCache, setRowCache] = useState<Record<number, TableRow>>({});
+
 
   
   const parentRef = useRef<HTMLDivElement>(null);
+  // const virtualizer = useVirtualizer({
+  //   count: rowCount,
+  //   getScrollElement: () => parentRef.current,
+  //   estimateSize: () => 47,
+  //   measureElement: (el) => el.getBoundingClientRect().height,
+  //   overscan: 10,
+  // });
+
+  
   const virtualizer = useVirtualizer({
-    count: rowCount,
+    count: rowCount, // can be approximate or fetched separately
     getScrollElement: () => parentRef.current,
     estimateSize: () => 47,
-    measureElement: (el) => el.getBoundingClientRect().height,
-    overscan: 10,
+    overscan: 100,
   });
 
+  const virtualItems = virtualizer.getVirtualItems();
+  const start = virtualItems[0]?.index ?? 0;
+  const end = virtualItems.at(-1)?.index ?? 0;
   const virtualRows = virtualizer.getVirtualItems();
   const totalHeight = virtualizer.getTotalSize();
 
+  // useEffect(() => {
+  //   void refetchRows(); // triggers fetch for [start, start + limit)
+  // }, [start, debouncedSearch, sort, filters]);
+
+  
+  
+
+  
+
+  // const {
+  //   data,
+  //   fetchNextPage,
+  //   hasNextPage,
+  //   isFetchingNextPage,
+  // } = api.table.getRows.useInfiniteQuery(
+  //   { tableId, 
+  //     limit: 100, 
+  //   search: isViewConfig(selectedView?.config) ? selectedView.config.search ?? debouncedSearch : debouncedSearch,
+  //   sort: isViewConfig(selectedView?.config) ? selectedView.config.sort ?? sort : sort,
+  //   filters: isViewConfig(selectedView?.config) ? selectedView.config.filters ?? filters : filters,
+  //   },
+  //   {
+  //     getNextPageParam: (lastPage) => lastPage.nextCursor,
+  //     refetchOnWindowFocus: false,
+  //     enabled: !!tableId,
+  //   }
+  // );
   const {
     data,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
   } = api.table.getRows.useInfiniteQuery(
-    { tableId, 
-      limit: 100, 
-    search: isViewConfig(selectedView?.config) ? selectedView.config.search ?? debouncedSearch : debouncedSearch,
-    sort: isViewConfig(selectedView?.config) ? selectedView.config.sort ?? sort : sort,
-    filters: isViewConfig(selectedView?.config) ? selectedView.config.filters ?? filters : filters,
+    {
+      tableId,
+      limit: 50,
+      search: debouncedSearch,
+      sort,
+      filters,
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
       refetchOnWindowFocus: false,
-      enabled: !!tableId,
     }
   );
-  // const { data, refetch, isFetching } = api.table.getRows.useQuery({
-  //   tableId,
-  //   start: virtualizer.getVirtualItems()[0]?.index ?? 0,
-  //   limit: 100,
-  //   sort: isViewConfig(selectedView?.config) ? selectedView.config.sort ?? sort : sort,,
-  //   search: isViewConfig(selectedView?.config) ? selectedView.config.search ?? debouncedSearch : debouncedSearch,
-  //   filters: isViewConfig(selectedView?.config) ? selectedView.config.filters ?? filters : filters,,
-  // });
 
-  
 
+
+  // useEffect(() => {
+  //   if (!data) return;
+  //   setRowCount(data.rows.length + (data.nextCursor ? 1 : 0));
+  // }, [data]);
 
   useEffect(() => {
-    if (!data) return;
-    const allRows = data.pages.flatMap((p) => p.rows);
-    setRowCount(allRows.length + (data.pages.at(-1)?.nextCursor ? 1 : 0));
-  }, [data]);
+  if (!data?.pages?.length) return;
+
+  // Get all fetched rows from all pages
+  const allRows = data.pages.flatMap((page) => page.rows);
+
+  // Estimate row count (optional: make more precise if your backend returns total count separately)
+  setRowCount(allRows.length);
+
+  // Cache each row by its index (assumes order is consistent and stable)
+  setRowCache((prev) => {
+    const updated = { ...prev };
+    allRows.forEach((row, i) => {
+      updated[i] = {
+        id: row.id,
+        ...(typeof row.values === 'object' && row.values !== null
+          ? (row.values as Record<string, string | number>)
+          : {}),
+      };
+    });
+    return updated;
+  });
+}, [data]);
+
+
+
   
   const [localEdits, setLocalEdits] = useState<Map<string, Map<string, string>>>(new Map());
 
@@ -105,20 +162,49 @@ export default function TablePage({ tableId }: { tableId: string }) {
 
 
   const updateCell = api.table.updateCell.useMutation();
-  // const addColumn = api.table.addColumn.useMutation({ onSuccess: () => refetch() });
-  const addColumn = api.table.addColumn.useMutation({
+  // const addColumn = api.table.addColumn.useMutation({
+  //   onSuccess: async () => {
+  //     await refetchTable();        // refresh columns
+  //     await refetchRows();         // refresh data (row values)
+  //     setRowCache({});             // clear cache so rows match new columns
+  //     // await utils.table.getTableById.invalidate({ tableId });
+  //   },
+  // });
+  const addColumnAndPopulate = api.table.addColumnAndPopulate.useMutation({
     onSuccess: async () => {
-      await utils.table.getTableById.invalidate({ tableId });
+      await refetchTable(); // updates column structure
+      await utils.table.getRows.invalidate({ tableId }); // clear rows cache
+      setRowCache({}); // reset client cache
     },
   });
-  const renameColumn = api.table.renameColumn.useMutation({ onSuccess: () => refetch() });
-  const deleteColumn = api.table.deleteColumn.useMutation({ onSuccess: () => refetch() });
-  const addRow = api.table.addRow.useMutation({ onSuccess: () => refetch() });
+
+
+  const renameColumn = api.table.renameColumn.useMutation({
+    onSuccess: async () => {
+      await refetchTable();
+      await utils.table.getRows.invalidate({ tableId });
+    },
+  });
+
+  const deleteColumn = api.table.deleteColumn.useMutation({
+    onSuccess: async () => {
+      await refetchTable();
+      await utils.table.getRows.invalidate({ tableId });
+      setRowCache({});
+    },
+  });
+
+  const addRow = api.table.addRow.useMutation({
+    onSuccess: async () => {
+      await utils.table.getRows.invalidate({ tableId });
+    },
+  });
+
   const addFakeRows = api.table.addFakeRows.useMutation({
     onSuccess: async () => {
         console.log("✅ 100k rows added successfully");
         await utils.table.getTableById.invalidate({ tableId });
-        await refetch(); // <-- ensure visible update
+        await refetchTable(); // <-- ensure visible update
     },
     onError: (err) => {
         console.error("❌ Failed to add 100k rows:", err);
@@ -151,18 +237,35 @@ export default function TablePage({ tableId }: { tableId: string }) {
   }
 
 
+  // const flatRows = useMemo<TableRow[]>(() => {
+  //   return (
+  //     data?.rows.map((row) => ({
+  //       id: row.id,
+  //       ...(typeof row.values === "object" && row.values !== null
+  //         ? row.values as Record<string, string | number>
+  //         : {})
+  //     })) ?? []
+  //   );
+  // }, [data, searchQuery]);
+
+  // const flatRows = useMemo<TableRow[]>(() => {
+  //   return Array.from({ length: rowCount }, (_, i) =>
+  //     rowCache[i] ?? { id: `placeholder-${i}` }
+  //   );
+  // }, [rowCache, rowCount]);
   const flatRows = useMemo<TableRow[]>(() => {
-    return (
-      data?.pages.flatMap((page) =>
-        page.rows.map((row) => ({
-          id: row.id,
-          ...(typeof row.values === "object" && row.values !== null
-          ? row.values as Record<string, string | number>
-          : {})
+    return data?.pages.flatMap((page) =>
+      page.rows.map((row) => ({
+        id: row.id,
+        ...(typeof row.values === 'object' && row.values !== null
+          ? (row.values as Record<string, string | number>)
+          : {}),
       }))
-      ) ?? []
-    );
-  }, [data, searchQuery]);
+    ) ?? [];
+  }, [data]);
+
+
+  
   console.log("DEBUG flatRows:", flatRows);
 
   const columns = useMemo<ColumnDef<TableRow>[]>(() => {
@@ -214,7 +317,7 @@ export default function TablePage({ tableId }: { tableId: string }) {
           value={editingValue}
           onChange={(e) => setEditingValue(e.target.value)} // ✅ fast local state only
           onBlur={() => {
-            const trimmed = editingValue.trim();
+            const trimmed = String(editingValue).trim();
             if (trimmed !== defaultValue) {
               // ✅ show new value immediately
               setLocalEdits((prev) => {
@@ -262,13 +365,23 @@ const tableInstance = useReactTable({
 });
 
 
+  // useEffect(() => {
+  //   const last = virtualRows.at(-1);
+  //   if (!last) return;
+  //   if (last.index >= flatRows.length - 1 && hasNextPage && !isFetchingNextPage) {
+  //     fetchNextPage();
+  //   }
+  // }, [virtualRows, flatRows.length, hasNextPage, isFetchingNextPage, searchQuery]);
+
   useEffect(() => {
     const last = virtualRows.at(-1);
     if (!last) return;
-    if (last.index >= flatRows.length - 1 && hasNextPage && !isFetchingNextPage) {
+
+    if (last.index >= flatRows.length - 10 && hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
-  }, [virtualRows, flatRows.length, hasNextPage, isFetchingNextPage, searchQuery]);
+  }, [virtualRows, flatRows.length, hasNextPage, isFetchingNextPage]);
+  
 
   // if (isLoading) return <p className="p-4">Loading table...</p>;
   if (isLoading || !table?.columns?.length) return <p className="p-4">Loading table...</p>;
@@ -284,7 +397,7 @@ const tableInstance = useReactTable({
           {viewSavedMessage}
         </div>
       )}
-      <div className="mb-4 space-x-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
 
         <GlobalColVisibilityPopover
           columns={table.columns}
@@ -300,12 +413,24 @@ const tableInstance = useReactTable({
 
         <button
           onClick={() => {
+            // const name = prompt("Column name?");
+            // if (!name) return;
+            // const type = prompt("Type (text/number)?", "text");
+            // if (!["text", "number"].includes(type ?? "")) return alert("Invalid type");
+
+            // addColumn.mutate({ tableId, name, type: type as "text" | "number" });
             const name = prompt("Column name?");
             if (!name) return;
             const type = prompt("Type (text/number)?", "text");
             if (!["text", "number"].includes(type ?? "")) return alert("Invalid type");
 
-            addColumn.mutate({ tableId, name, type: type as "text" | "number" });
+            addColumnAndPopulate.mutate({
+              tableId,
+              name,
+              type: type as "text" | "number",
+              defaultValue: "", // optional
+            });
+
           }}
           className="bg-green-500 text-white px-3 py-1 rounded"
         >
@@ -325,8 +450,9 @@ const tableInstance = useReactTable({
                 setAddingRows(true);
                 try {
                     await addFakeRows.mutateAsync({ tableId, count: 100000 });
-                    await utils.table.getRows.invalidate(); // Clear cache
-                    await refetch(); // Re-fetch first page to see new rows
+                    await utils.table.getRows.invalidate({ tableId }); // Clear tRPC cache
+                    setRowCache({}); // Clear local cache so new rows load cleanly
+                    await fetchNextPage(); // Load more data immediately (optional)
                     console.log("✅ Rows added and data refreshed");
                 } catch (err) {
                     console.error("❌ Failed to add rows:", err);
@@ -351,9 +477,19 @@ const tableInstance = useReactTable({
           sort={sort}
           setSort={setSort}
         />
+        <div className="flex-shrink-0">
+          <input
+            type="text"
+            placeholder="🔍 Search across all cells..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="px-3 py-1 border rounded w-full max-w-sm"
+          />
+        </div>
+      </div>
 
 
-
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         {/* progress indicator */}
         {addingRows && (
             <p className="text-sm text-gray-500 mt-2">
@@ -361,15 +497,6 @@ const tableInstance = useReactTable({
             </p>
         )}
 
-        <div className="mb-4">
-          <input
-            type="text"
-            placeholder="🔍 Search across all cells..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="px-3 py-2 border rounded w-full max-w-sm"
-          />
-        </div>
         <div className="mb-4">
           <label htmlFor="view-select" className="mr-2 font-medium">View:</label>
           <select
@@ -524,7 +651,7 @@ const tableInstance = useReactTable({
                 />
               ))}
             </colgroup>
-            <tbody>
+            {/* <tbody>
               {virtualRows.map((virtualRow) => {
                 const row = tableInstance
                   .getRowModel()
@@ -554,7 +681,55 @@ const tableInstance = useReactTable({
                   </tr>
                 );
               })}
+            </tbody> */}
+            <tbody>
+              {virtualRows.map((virtualRow) => {
+                const row = tableInstance.getRowModel().rows.find((r) => r.index === virtualRow.index);
+                
+                if (!row) {
+                  // fallback loading row
+                  return (
+                    <tr
+                      key={`loading-${virtualRow.index}`}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        transform: `translateY(${virtualRow.start}px)`,
+                        height: `${virtualRow.size}px`,
+                      }}
+                    >
+                      <td colSpan={tableInstance.getAllLeafColumns().length} className="text-center text-sm text-gray-400 py-2">
+                        Loading row...
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return (
+                  <tr
+                    key={row.id}
+                    ref={virtualizer.measureElement}
+                    className="hover:bg-gray-100 transition-colors"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <td
+                        key={cell.id}
+                        className="border px-2 py-2 leading-snug align-top"
+                        style={{ boxSizing: 'content-box' }}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
+
           </table>
         </div>
       </div>
