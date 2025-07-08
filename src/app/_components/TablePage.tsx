@@ -577,66 +577,50 @@ const tableInstance = useReactTable({
 
 
       </div>
+      
 
-      <div className="h-[600px] overflow-auto border" ref={parentRef}>
-        {/* Static Header */}
-        <table className="table-fixed border-collapse">
+      <div
+        className="h-[600px] overflow-auto border relative"
+        ref={parentRef}
+      >
+        {/* Sticky header table */}
+        <table className="table-fixed border-collapse absolute top-0 left-0 z-10 bg-white">
           <colgroup>
             {tableInstance.getFlatHeaders().map((header) => (
               <col
                 key={header.id}
                 style={{
-                  width: `${header.getSize?.() ?? 150}px`,
-                  minWidth: `${header.getSize?.() ?? 150}px`,
-                  maxWidth: `${header.getSize?.() ?? 150}px`,
+                  width: '150px',
+                  minWidth: '150px',
+                  maxWidth: '150px',
                 }}
               />
             ))}
           </colgroup>
-          {/* <thead>
+
+          <thead>
             {tableInstance.getHeaderGroups().map((group) => (
               <tr key={group.id}>
                 {group.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="border px-2 py-2 bg-gray-100"
-                    style={{ boxSizing: "border-box" }}
+                    className="border px-2 py-2"
+                    style={{ height: '40px' }}
                   >
-                    {flexRender(header.column.columnDef.header, header.getContext())}
+                    <div className="flex justify-between items-center">
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </div>
                   </th>
                 ))}
               </tr>
             ))}
-          </thead> */}
-          <thead>
-            {tableInstance.getHeaderGroups().map((group) => (
-                <React.Fragment key={group.id}>
-                <tr>
-                    {group.headers.map((header) => (
-                    <th
-                        key={header.id}
-                        className="border px-2 py-2 bg-gray-100"
-                        style={{ boxSizing: "border-box" }}
-                    >
-                          <div className="flex flex-col">
-                            <div className="flex justify-between items-center">
-                              <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
-                            </div>
-                          </div>
-
-                    </th>
-                    ))}
-                </tr>
-                </React.Fragment>
-            ))}
-            </thead>
-
+          </thead>
         </table>
 
-        {/* Virtualised Body */}
+        {/* Virtualised body */}
         <div
-          style={{ height: totalHeight, position: "relative" }}
-          className="relative w-full"
+          style={{ height: totalHeight, position: 'relative' }}
+          className="pt-[40px]"
         >
           <table className="table-fixed border-collapse absolute top-0 left-0">
             <colgroup>
@@ -644,95 +628,98 @@ const tableInstance = useReactTable({
                 <col
                   key={header.id}
                   style={{
-                    width: `${header.getSize() ?? 150}px`,
-                    minWidth: `${header.getSize() ?? 150}px`,
-                    maxWidth: `${header.getSize() ?? 150}px`,
+                    width: '150px',
+                    minWidth: '150px',
+                    maxWidth: '150px',
                   }}
                 />
               ))}
             </colgroup>
-            {/* <tbody>
-              {virtualRows.map((virtualRow) => {
-                const row = tableInstance
-                  .getRowModel()
-                  .rows.find((r) => r.index === virtualRow.index);
-                if (!row) return null;
 
-                return (
-                  <tr
-                    key={row.id}
-                    ref={virtualizer.measureElement}
-                    className="hover:bg-gray-100 transition-colors"
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <td
-                        key={cell.id}
-                        className="border px-2 py-2 leading-snug align-top"
-                        style={{ boxSizing: "content-box" }}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody> */}
-            <tbody>
-              {virtualRows.map((virtualRow) => {
-                const row = tableInstance.getRowModel().rows.find((r) => r.index === virtualRow.index);
-                
-                if (!row) {
-                  // fallback loading row
-                  return (
-                    <tr
-                      key={`loading-${virtualRow.index}`}
+            {/* Sticky Header inside scroll container */}
+            <thead className="sticky top-0 z-20 bg-white">
+              {tableInstance.getHeaderGroups().map((group) => (
+                <tr key={group.id}>
+                  {group.headers.map((header) => (
+                    <th
+                      key={header.id}
+                      className="border px-2 py-2 text-left bg-gray-100"
                       style={{
-                        position: 'absolute',
-                        top: 0,
-                        transform: `translateY(${virtualRow.start}px)`,
-                        height: `${virtualRow.size}px`,
+                        height: '40px',
                       }}
                     >
-                      <td colSpan={tableInstance.getAllLeafColumns().length} className="text-center text-sm text-gray-400 py-2">
-                        Loading row...
-                      </td>
-                    </tr>
-                  );
-                }
+                      <div className="flex justify-between items-center">
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
 
-                return (
-                  <tr
-                    key={row.id}
-                    ref={virtualizer.measureElement}
-                    className="hover:bg-gray-100 transition-colors"
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <td
-                        key={cell.id}
-                        className="border px-2 py-2 leading-snug align-top"
-                        style={{ boxSizing: 'content-box' }}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
+            <tbody>
+              <tr>
+                <td colSpan={tableInstance.getAllLeafColumns().length} style={{ height: totalHeight, position: 'relative' }}>
+                  <div className="absolute top-0 left-0 w-full">
+                    {virtualRows.map((virtualRow) => {
+                      const row = tableInstance.getRowModel().rows.find(
+                        (r) => r.index === virtualRow.index
+                      );
+
+                      if (!row) {
+                        return (
+                          <div
+                            key={`loading-${virtualRow.index}`}
+                            style={{
+                              position: 'absolute',
+                              transform: `translateY(${virtualRow.start}px)`,
+                              height: `${virtualRow.size}px`,
+                            }}
+                            className="text-center text-sm text-gray-400"
+                          >
+                            Loading...
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={row.id}
+                          ref={virtualizer.measureElement}
+                          style={{
+                            position: 'absolute',
+                            transform: `translateY(${virtualRow.start}px)`,
+                            height: `${virtualRow.size}px`,
+                            display: 'flex',
+                          }}
+                          className="hover:bg-gray-100 transition-colors"
+                        >
+                          {row.getVisibleCells().map((cell) => (
+                            <div
+                              key={cell.id}
+                              className="border px-2 py-2 leading-snug"
+                              style={{
+                                width: '150px',
+                                minWidth: '150px',
+                                maxWidth: '150px',
+                                boxSizing: 'border-box',
+                              }}
+                            >
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </td>
+              </tr>
             </tbody>
-
           </table>
         </div>
       </div>
+
+
 
 
     </div>
