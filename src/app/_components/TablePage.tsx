@@ -17,6 +17,8 @@ import type { ViewConfig } from '~/server/api/routers/table';
 import GlobalFilterPopover from '~/app/_components/GlobalFilterPopover';
 import GlobalSortPopover from './GlobalSortPopover';
 import GlobalColVisibilityPopover from '~/app/_components/GlobalColVisibilityPopover';
+import { createPortal } from 'react-dom';
+import { Dialog } from '@headlessui/react';
 
 
 type TableRow = {
@@ -51,6 +53,9 @@ export default function TablePage({ tableId }: { tableId: string }) {
   });
   const [rowCache, setRowCache] = useState<Record<number, TableRow>>({});
 
+  const [isViewTypeOpen, setIsViewTypeOpen] = useState(false);
+  const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
+  const [newViewType, setNewViewType] = useState<'grid' | null>(null);
 
   
   const parentRef = useRef<HTMLDivElement>(null);
@@ -80,7 +85,23 @@ export default function TablePage({ tableId }: { tableId: string }) {
   //   void refetchRows(); // triggers fetch for [start, start + limit)
   // }, [start, debouncedSearch, sort, filters]);
 
-  
+  const viewTypeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        isViewTypeOpen &&
+        viewTypeRef.current &&
+        !viewTypeRef.current.contains(event.target as Node)
+      ) {
+        setIsViewTypeOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isViewTypeOpen]);
+
   
 
   
@@ -253,16 +274,28 @@ export default function TablePage({ tableId }: { tableId: string }) {
   //     rowCache[i] ?? { id: `placeholder-${i}` }
   //   );
   // }, [rowCache, rowCount]);
+
   const flatRows = useMemo<TableRow[]>(() => {
-    return data?.pages.flatMap((page) =>
-      page.rows.map((row) => ({
-        id: row.id,
-        ...(typeof row.values === 'object' && row.values !== null
-          ? (row.values as Record<string, string | number>)
-          : {}),
-      }))
-    ) ?? [];
-  }, [data]);
+  const all = data?.pages.flatMap((page) =>
+    page.rows.map((row) => ({
+      id: row.id,
+      ...(typeof row.values === 'object' && row.values !== null
+        ? (row.values as Record<string, string | number>)
+        : {}),
+    }))
+  ) ?? [];
+
+  const seen = new Set();
+  for (const row of all) {
+    if (seen.has(row.id)) {
+      console.warn("🚨 Duplicate row id found:", row.id);
+    }
+    seen.add(row.id);
+  }
+
+  return all;
+}, [data]);
+
 
 
   
@@ -388,241 +421,379 @@ const tableInstance = useReactTable({
   if (!table) return <p className="p-4">Table not found.</p>;
 
   
-
   return (
-    <div className="p-4">
-      <h1 className="text-xl font-bold mb-4">{table.name}</h1>
-      {viewSavedMessage && (
-        <div className="mb-4 px-4 py-2 bg-green-100 border border-green-400 text-green-700 rounded shadow">
-          {viewSavedMessage}
-        </div>
-      )}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-
-        <GlobalColVisibilityPopover
-          columns={table.columns}
-          visibility={columnVisibility}
-          onToggle={(columnId, visible) => {
-            setColumnVisibility((prev) => ({
-              ...prev,
-              [columnId]: visible,
-            }));
-          }}
-        />
-
-
-        <button
-          onClick={() => {
-            // const name = prompt("Column name?");
-            // if (!name) return;
-            // const type = prompt("Type (text/number)?", "text");
-            // if (!["text", "number"].includes(type ?? "")) return alert("Invalid type");
-
-            // addColumn.mutate({ tableId, name, type: type as "text" | "number" });
-            const name = prompt("Column name?");
-            if (!name) return;
-            const type = prompt("Type (text/number)?", "text");
-            if (!["text", "number"].includes(type ?? "")) return alert("Invalid type");
-
-            addColumnAndPopulate.mutate({
-              tableId,
-              name,
-              type: type as "text" | "number",
-              defaultValue: "", // optional
-            });
-
-          }}
-          className="bg-green-500 text-white px-3 py-1 rounded"
-        >
-          ➕ Add Column
-        </button>
-
-        <button
-          onClick={() => addRow.mutate({ tableId })}
-          className="bg-blue-500 text-white px-3 py-1 rounded"
-        >
-          ➕ Add Row
-        </button>
-
-        <button
-            onClick={async () => {
-                if (confirm("Are you sure you want to add 100,000 fake rows?")) {
-                setAddingRows(true);
-                try {
-                    await addFakeRows.mutateAsync({ tableId, count: 100000 });
-                    await utils.table.getRows.invalidate({ tableId }); // Clear tRPC cache
-                    setRowCache({}); // Clear local cache so new rows load cleanly
-                    await fetchNextPage(); // Load more data immediately (optional)
-                    console.log("✅ Rows added and data refreshed");
-                } catch (err) {
-                    console.error("❌ Failed to add rows:", err);
-                    alert("Failed to add rows: " + (err as Error).message);
-                } finally {
-                    setAddingRows(false);
-                }
-                }
-            }}
-            disabled={addingRows}
-            className="bg-purple-500 text-white px-3 py-1 rounded disabled:opacity-50"
-            >
-            {addingRows ? "Adding rows..." : "⚡ Add 100k Rows"}
-        </button>
-        <GlobalFilterPopover
-          columns={table.columns}
-          filters={filters}
-          setFilters={setFilters}
-        />
-        <GlobalSortPopover
-          columns={table.columns}
-          sort={sort}
-          setSort={setSort}
-        />
-        <div className="flex-shrink-0">
-          <input
-            type="text"
-            placeholder="🔍 Search across all cells..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="px-3 py-1 border rounded w-full max-w-sm"
-          />
-        </div>
-      </div>
-
-
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        {/* progress indicator */}
-        {addingRows && (
-            <p className="text-sm text-gray-500 mt-2">
-                ⏳ Please wait... Generating 100,000 rows. This may take a few seconds.
-            </p>
-        )}
-
-        <div className="mb-4">
-          <label htmlFor="view-select" className="mr-2 font-medium">View:</label>
-          <select
-            id="view-select"
-            className="px-2 py-1 border rounded"
-            onChange={(e) => {
-              const view = views?.find(v => v.id === e.target.value);
-              // setSelectedView(view ?? null);
-              if (!view) {
-                setSelectedView(null);
-                setSearchQuery("");        // ✅ clear search
-                // setSort(undefined);
-                setSort([]);
-                setFilters({})
-                setColumnVisibility({});
-                
-              } else {
-                const config = view.config as ViewConfig;
-                setSelectedView(view);
-                setFilters(config.filters ?? {});
-                // setSort(config.sort ?? undefined);
-                setSort(Array.isArray(config.sort) ? config.sort : []);
-                setSearchQuery(config.search ?? "");
-
-                const hiddenCols = config.hiddenColumns ?? [];
-                const visibility = Object.fromEntries(
-                table?.columns.map((col) => [col.id, !hiddenCols.includes(col.id)]) ?? []
-                );
-                setColumnVisibility(visibility);
-                                
-              }
-            }}
-          >
-            <option value="">Default View</option>
-            {views?.map(view => (
-              <option key={view.id} value={view.id}>{view.name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="mb-4">
-          <label htmlFor="view-name" className="mr-2 font-medium">Save Current View:</label>
-          <input
-            id="view-name"
-            type="text"
-            placeholder="View name"
-            value={viewName}
-            onChange={(e) => setViewName(e.target.value)}
-            className="px-2 py-1 border rounded mr-2"
-          />
-          <button
-            className="bg-gray-800 text-white px-3 py-1 rounded"
-            onClick={() => {
-              if (!viewName.trim()) return alert("Enter a name");
-
-              console.log("Saving view with sort:", sort);
-              const hiddenColumns = Object.entries(columnVisibility)
-                .filter(([, isVisible]) => !isVisible)
-                .map(([colId]) => colId);
-
-              saveView.mutate({
-                tableId,
-                name: viewName.trim(),
-                config: {
-                  search: searchQuery || undefined,
-                  sort: Array.isArray(sortConfig) ? sortConfig : sortConfig ? [sortConfig] : [],
-                  filters: filters || undefined,        
-                  hiddenColumns,
-                },
-              });
-              
-              setViewName(""); // clear input after saving
-            }}
-          >
-            💾 Save View
-          </button>
-        </div>
-
-
-      </div>
+    
+    <div className="flex h-screen">
       
+      
+        {/* Left Sidebar for Views */}
+          <div className="w-64 border-r p-4 overflow-y-auto relative">
+            <h2 className="font-semibold mb-2">Views</h2>
 
-      <div
-        className="h-[600px] overflow-auto border relative"
-        ref={parentRef}
-      >
-        {/* Sticky header table */}
-        <table className="table-fixed border-collapse absolute top-0 left-0 z-10 bg-white">
-          <colgroup>
-            {tableInstance.getFlatHeaders().map((header) => (
-              <col
-                key={header.id}
-                style={{
-                  width: '150px',
-                  minWidth: '150px',
-                  maxWidth: '150px',
-                }}
-              />
-            ))}
-          </colgroup>
+            {/* Create New View Button + View Type Popup */}
+            <div className="mb-4 relative">
+              <button
+                onClick={() => setIsViewTypeOpen(true)}
+                className="w-full bg-blue-600 text-white px-3 py-1 rounded"
+              >
+                ➕ Create view
+              </button>
 
-          <thead>
-            {tableInstance.getHeaderGroups().map((group) => (
-              <tr key={group.id}>
-                {group.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    className="border px-2 py-2"
-                    style={{ height: '40px' }}
+              {isViewTypeOpen &&
+                createPortal(
+                  <div
+                    ref={viewTypeRef}
+                    className="fixed top-[100px] left-[300px] w-64 bg-white shadow-xl border rounded z-[9999] p-4"
                   >
-                    <div className="flex justify-between items-center">
-                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    <p className="text-sm text-gray-500 mb-2">View types</p>
+                    <div className="space-y-2">
+                      <button
+                        className="w-full text-left px-3 py-2 bg-blue-100 hover:bg-blue-200 rounded"
+                        onClick={() => {
+                          setNewViewType('grid');
+                          setIsViewTypeOpen(false);
+                          setIsNameDialogOpen(true);
+                        }}
+                      >
+                        📊 Grid
+                      </button>
+                      <button disabled className="w-full text-left px-3 py-2 text-gray-400 bg-gray-100 rounded cursor-not-allowed">
+                        📅 Calendar
+                      </button>
+                      <button disabled className="w-full text-left px-3 py-2 text-gray-400 bg-gray-100 rounded cursor-not-allowed">
+                        🖼️ Gallery
+                      </button>
+                      <button disabled className="w-full text-left px-3 py-2 text-gray-400 bg-gray-100 rounded cursor-not-allowed">
+                        📌 Kanban
+                      </button>
                     </div>
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-        </table>
+                  </div>,
+                  document.body
+                )}
+            </div>
 
-        {/* Virtualised body */}
+            {/* View List */}
+            <ul className="space-y-1 mb-4">
+              <li>
+                <button
+                  onClick={() => {
+                    setSelectedView(null);
+                    setSearchQuery('');
+                    setSort([]);
+                    setFilters({});
+                    setColumnVisibility({});
+                  }}
+                  className={`w-full text-left px-2 py-1 rounded ${
+                    !selectedView ? 'bg-gray-200' : 'hover:bg-gray-100'
+                  }`}
+                >
+                  Grid view
+                </button>
+              </li>
+              {views?.map((view) => (
+                <li key={view.id}>
+                  <button
+                    onClick={() => {
+                      const config = view.config as ViewConfig;
+                      setSelectedView(view);
+                      setFilters(config.filters ?? {});
+                      setSort(Array.isArray(config.sort) ? config.sort : []);
+                      setSearchQuery(config.search ?? '');
+                      const hiddenCols = config.hiddenColumns ?? [];
+                      const visibility = Object.fromEntries(
+                        table?.columns.map((col) => [col.id, !hiddenCols.includes(col.id)]) ?? []
+                      );
+                      setColumnVisibility(visibility);
+                    }}
+                    className={`w-full text-left px-2 py-1 rounded ${
+                      selectedView?.id === view.id ? 'bg-gray-200' : 'hover:bg-gray-100'
+                    }`}
+                  >
+                    {view.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+
+        {isViewTypeOpen && (
+          <div className="absolute top-12 left-full ml-2 w-64 bg-white shadow-xl border rounded z-50 p-4">
+            <h3 className="text-lg font-semibold mb-4">Choose view type</h3>
+            <div className="space-y-2">
+              <button
+                className="w-full text-left px-3 py-2 bg-blue-100 hover:bg-blue-200 rounded"
+                onClick={() => {
+                  setNewViewType('grid');
+                  setIsViewTypeOpen(false);
+                  setIsNameDialogOpen(true);
+                }}
+              >
+                📊 Grid
+              </button>
+              <button disabled className="w-full text-left px-3 py-2 text-gray-400 bg-gray-100 rounded cursor-not-allowed">
+                📅 Calendar
+              </button>
+              <button disabled className="w-full text-left px-3 py-2 text-gray-400 bg-gray-100 rounded cursor-not-allowed">
+                🖼️ Gallery
+              </button>
+              <button disabled className="w-full text-left px-3 py-2 text-gray-400 bg-gray-100 rounded cursor-not-allowed">
+                📌 Kanban
+              </button>
+            </div>
+          </div>
+        )} 
+
+
+        <Dialog open={isNameDialogOpen} onClose={() => setIsNameDialogOpen(false)} className="relative z-50">
+          <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded shadow-xl w-96">
+              <h3 className="text-lg font-semibold mb-4">Name your view</h3>
+              <input
+                type="text"
+                placeholder="Enter view name"
+                value={viewName}
+                onChange={(e) => setViewName(e.target.value)}
+                className="w-full border px-3 py-2 rounded mb-4"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setIsNameDialogOpen(false)}
+                  className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  onClick={() => {
+                    if (!viewName.trim()) return alert('Enter a view name');
+                    const hiddenColumns = Object.entries(columnVisibility)
+                      .filter(([, isVisible]) => !isVisible)
+                      .map(([colId]) => colId);
+
+                    saveView.mutate({
+                      tableId,
+                      name: viewName.trim(),
+                      config: {
+                        search: searchQuery || undefined,
+                        sort,
+                        filters,
+                        hiddenColumns,
+                      },
+                    });
+
+                    setViewName('');
+                    setIsNameDialogOpen(false);
+                  }}
+                >
+                  ➕ Create view
+                </button>
+              </div>
+            </div>
+          </div>
+        </Dialog>
+
+
+
+
+      
+      <div className="flex-1 p-4 overflow-x-auto">
+
+        <h1 className="text-xl font-bold mb-4">{table.name}</h1>
+        {viewSavedMessage && (
+          <div className="mb-4 px-4 py-2 bg-green-100 border border-green-400 text-green-700 rounded shadow">
+            {viewSavedMessage}
+          </div>
+        )}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+
+          <GlobalColVisibilityPopover
+            columns={table.columns}
+            visibility={columnVisibility}
+            onToggle={(columnId, visible) => {
+              setColumnVisibility((prev) => ({
+                ...prev,
+                [columnId]: visible,
+              }));
+            }}
+          />
+
+
+          <button
+            onClick={() => {
+              // const name = prompt("Column name?");
+              // if (!name) return;
+              // const type = prompt("Type (text/number)?", "text");
+              // if (!["text", "number"].includes(type ?? "")) return alert("Invalid type");
+
+              // addColumn.mutate({ tableId, name, type: type as "text" | "number" });
+              const name = prompt("Column name?");
+              if (!name) return;
+              const type = prompt("Type (text/number)?", "text");
+              if (!["text", "number"].includes(type ?? "")) return alert("Invalid type");
+
+              addColumnAndPopulate.mutate({
+                tableId,
+                name,
+                type: type as "text" | "number",
+                defaultValue: "", // optional
+              });
+
+            }}
+            className="bg-green-500 text-white px-3 py-1 rounded"
+          >
+            ➕ Add Column
+          </button>
+
+          <button
+            onClick={() => addRow.mutate({ tableId })}
+            className="bg-blue-500 text-white px-3 py-1 rounded"
+          >
+            ➕ Add Row
+          </button>
+
+          <button
+              onClick={async () => {
+                  if (confirm("Are you sure you want to add 100,000 fake rows?")) {
+                  setAddingRows(true);
+                  try {
+                      await addFakeRows.mutateAsync({ tableId, count: 100000 });
+                      await utils.table.getRows.invalidate({ tableId }); // Clear tRPC cache
+                      setRowCache({}); // Clear local cache so new rows load cleanly
+                      await fetchNextPage(); // Load more data immediately (optional)
+                      console.log("✅ Rows added and data refreshed");
+                  } catch (err) {
+                      console.error("❌ Failed to add rows:", err);
+                      alert("Failed to add rows: " + (err as Error).message);
+                  } finally {
+                      setAddingRows(false);
+                  }
+                  }
+              }}
+              disabled={addingRows}
+              className="bg-purple-500 text-white px-3 py-1 rounded disabled:opacity-50"
+              >
+              {addingRows ? "Adding rows..." : "⚡ Add 100k Rows"}
+          </button>
+          <GlobalFilterPopover
+            columns={table.columns}
+            filters={filters}
+            setFilters={setFilters}
+          />
+          <GlobalSortPopover
+            columns={table.columns}
+            sort={sort}
+            setSort={setSort}
+          />
+          <div className="flex-shrink-0">
+            <input
+              type="text"
+              placeholder="🔍 Search across all cells..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="px-3 py-1 border rounded w-full max-w-sm"
+            />
+          </div>
+        </div>
+
+
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {/* progress indicator */}
+          {addingRows && (
+              <p className="text-sm text-gray-500 mt-2">
+                  ⏳ Please wait... Generating 100,000 rows. This may take a few seconds.
+              </p>
+          )}
+
+          {/* <div className="mb-4">
+            <label htmlFor="view-select" className="mr-2 font-medium">View:</label>
+            <select
+              id="view-select"
+              className="px-2 py-1 border rounded"
+              onChange={(e) => {
+                const view = views?.find(v => v.id === e.target.value);
+                // setSelectedView(view ?? null);
+                if (!view) {
+                  setSelectedView(null);
+                  setSearchQuery("");        // ✅ clear search
+                  // setSort(undefined);
+                  setSort([]);
+                  setFilters({})
+                  setColumnVisibility({});
+                  
+                } else {
+                  const config = view.config as ViewConfig;
+                  setSelectedView(view);
+                  setFilters(config.filters ?? {});
+                  // setSort(config.sort ?? undefined);
+                  setSort(Array.isArray(config.sort) ? config.sort : []);
+                  setSearchQuery(config.search ?? "");
+
+                  const hiddenCols = config.hiddenColumns ?? [];
+                  const visibility = Object.fromEntries(
+                  table?.columns.map((col) => [col.id, !hiddenCols.includes(col.id)]) ?? []
+                  );
+                  setColumnVisibility(visibility);
+                                  
+                }
+              }}
+            >
+              <option value="">Default View</option>
+              {views?.map(view => (
+                <option key={view.id} value={view.id}>{view.name}</option>
+              ))}
+            </select>
+          </div> */}
+
+          {/* <div className="mb-4">
+            <label htmlFor="view-name" className="mr-2 font-medium">Save Current View:</label>
+            <input
+              id="view-name"
+              type="text"
+              placeholder="View name"
+              value={viewName}
+              onChange={(e) => setViewName(e.target.value)}
+              className="px-2 py-1 border rounded mr-2"
+            />
+            <button
+              className="bg-gray-800 text-white px-3 py-1 rounded"
+              onClick={() => {
+                if (!viewName.trim()) return alert("Enter a name");
+
+                console.log("Saving view with sort:", sort);
+                const hiddenColumns = Object.entries(columnVisibility)
+                  .filter(([, isVisible]) => !isVisible)
+                  .map(([colId]) => colId);
+
+                saveView.mutate({
+                  tableId,
+                  name: viewName.trim(),
+                  config: {
+                    search: searchQuery || undefined,
+                    sort: Array.isArray(sortConfig) ? sortConfig : sortConfig ? [sortConfig] : [],
+                    filters: filters || undefined,        
+                    hiddenColumns,
+                  },
+                });
+                
+                setViewName(""); // clear input after saving
+              }}
+            >
+              💾 Save View
+            </button>
+          </div> */}
+
+
+        </div>
+        
+
         <div
-          style={{ height: totalHeight, position: 'relative' }}
-          className="pt-[40px]"
+          className="h-[600px] overflow-auto border relative"
+          ref={parentRef}
         >
-          <table className="table-fixed border-collapse absolute top-0 left-0">
+          {/* Sticky header table */}
+          <table className="table-fixed border-collapse absolute top-0 left-0 z-10 bg-white">
             <colgroup>
               {tableInstance.getFlatHeaders().map((header) => (
                 <col
@@ -636,17 +807,14 @@ const tableInstance = useReactTable({
               ))}
             </colgroup>
 
-            {/* Sticky Header inside scroll container */}
-            <thead className="sticky top-0 z-20 bg-white">
+            <thead>
               {tableInstance.getHeaderGroups().map((group) => (
                 <tr key={group.id}>
                   {group.headers.map((header) => (
                     <th
                       key={header.id}
-                      className="border px-2 py-2 text-left bg-gray-100"
-                      style={{
-                        height: '40px',
-                      }}
+                      className="border px-2 py-2"
+                      style={{ height: '40px' }}
                     >
                       <div className="flex justify-between items-center">
                         {flexRender(header.column.columnDef.header, header.getContext())}
@@ -656,72 +824,115 @@ const tableInstance = useReactTable({
                 </tr>
               ))}
             </thead>
+          </table>
 
-            <tbody>
-              <tr>
-                <td colSpan={tableInstance.getAllLeafColumns().length} style={{ height: totalHeight, position: 'relative' }}>
-                  <div className="absolute top-0 left-0 w-full">
-                    {virtualRows.map((virtualRow) => {
-                      const row = tableInstance.getRowModel().rows.find(
-                        (r) => r.index === virtualRow.index
-                      );
+          {/* Virtualised body */}
+          <div
+            style={{ height: totalHeight, position: 'relative' }}
+            className="pt-[40px]"
+          >
+            <table className="table-fixed border-collapse absolute top-0 left-0">
+              <colgroup>
+                {tableInstance.getFlatHeaders().map((header) => (
+                  <col
+                    key={header.id}
+                    style={{
+                      width: '150px',
+                      minWidth: '150px',
+                      maxWidth: '150px',
+                    }}
+                  />
+                ))}
+              </colgroup>
 
-                      if (!row) {
+              {/* Sticky Header inside scroll container */}
+              <thead className="sticky top-0 z-20 bg-white">
+                {tableInstance.getHeaderGroups().map((group) => (
+                  <tr key={group.id}>
+                    {group.headers.map((header) => (
+                      <th
+                        key={header.id}
+                        className="border px-2 py-2 text-left bg-gray-100"
+                        style={{
+                          height: '40px',
+                        }}
+                      >
+                        <div className="flex justify-between items-center">
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                ))}
+              </thead>
+
+              <tbody>
+                <tr>
+                  <td colSpan={tableInstance.getAllLeafColumns().length} style={{ height: totalHeight, position: 'relative' }}>
+                    <div className="absolute top-0 left-0 w-full">
+                      {virtualRows.map((virtualRow) => {
+                        const row = tableInstance.getRowModel().rows.find(
+                          (r) => r.index === virtualRow.index
+                        );
+
+                        if (!row) {
+                          return (
+                            <div
+                              key={`loading-${virtualRow.index}`}
+                              style={{
+                                position: 'absolute',
+                                transform: `translateY(${virtualRow.start}px)`,
+                                height: `${virtualRow.size}px`,
+                              }}
+                              className="text-center text-sm text-gray-400"
+                            >
+                              Loading...
+                            </div>
+                          );
+                        }
+
                         return (
                           <div
-                            key={`loading-${virtualRow.index}`}
+                            // key={row.id}
+                            key={`${row.id}-${virtualRow.index}`}
+                            ref={virtualizer.measureElement}
                             style={{
                               position: 'absolute',
                               transform: `translateY(${virtualRow.start}px)`,
                               height: `${virtualRow.size}px`,
+                              display: 'flex',
                             }}
-                            className="text-center text-sm text-gray-400"
+                            className="hover:bg-gray-100 transition-colors"
                           >
-                            Loading...
+                            {row.getVisibleCells().map((cell) => (
+                              <div
+                                key={cell.id}
+                                className="border px-2 py-2 leading-snug"
+                                style={{
+                                  width: '150px',
+                                  minWidth: '150px',
+                                  maxWidth: '150px',
+                                  boxSizing: 'border-box',
+                                }}
+                              >
+                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                              </div>
+                            ))}
                           </div>
                         );
-                      }
-
-                      return (
-                        <div
-                          key={row.id}
-                          ref={virtualizer.measureElement}
-                          style={{
-                            position: 'absolute',
-                            transform: `translateY(${virtualRow.start}px)`,
-                            height: `${virtualRow.size}px`,
-                            display: 'flex',
-                          }}
-                          className="hover:bg-gray-100 transition-colors"
-                        >
-                          {row.getVisibleCells().map((cell) => (
-                            <div
-                              key={cell.id}
-                              className="border px-2 py-2 leading-snug"
-                              style={{
-                                width: '150px',
-                                minWidth: '150px',
-                                maxWidth: '150px',
-                                boxSizing: 'border-box',
-                              }}
-                            >
-                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                      })}
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
+
+
+
+
       </div>
-
-
-
-
     </div>
   );
 }

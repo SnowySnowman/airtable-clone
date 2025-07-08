@@ -250,8 +250,9 @@ export const tableRouter = createTRPCRouter({
     }),
 
     addFakeRows: publicProcedure
-      .input(z.object({ tableId: z.string(), count: z.number().min(1).max(100000) }))
-      .mutation(async ({ input, ctx }) => {
+    .input(z.object({ tableId: z.string(), count: z.number().min(1).max(100000) }))
+    .mutation(async ({ input, ctx }) => {
+      try {
         const table = await ctx.db.table.findUnique({
           where: { id: input.tableId },
           include: { columns: true },
@@ -260,30 +261,49 @@ export const tableRouter = createTRPCRouter({
         if (!table) throw new TRPCError({ code: "NOT_FOUND" });
 
         const rowsData = Array.from({ length: input.count }).map(() => {
-        const values: Record<string, string | number> = {};
-        for (const col of table.columns) {
-          values[col.id] =
-            col.type === ColumnType.NUMBER
-              ? faker.number.int({ min: 1, max: 1000 })
-              : faker.word.words({ count: 3 });
+          const values: Record<string, string | number> = {};
+
+          for (const col of table.columns) {
+            const colName = col.name.toLowerCase();
+
+            if (colName.includes('name')) {
+              values[col.id] = faker.person.fullName();
+            } else if (colName.includes('age')) {
+              values[col.id] = faker.number.int({ min: 18, max: 65 });
+            } else if (col.type === ColumnType.NUMBER) {
+              values[col.id] = faker.number.int({ min: 1, max: 1000 });
+            } else {
+              values[col.id] = faker.word.words({ count: 3 });
+            }
+          }
+
+          return {
+            tableId: input.tableId,
+            values,
+          };
+        });
+
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < rowsData.length; i += BATCH_SIZE) {
+          const chunk = rowsData.slice(i, i + BATCH_SIZE);
+
+          // Try-catch around DB operation
+          try {
+            await ctx.db.row.createMany({ data: chunk });
+          } catch (err) {
+            console.error("❌ Failed chunk at batch", i, ":", err);
+            throw err;
+          }
         }
 
-        return {
-          tableId: input.tableId,
-          values,
-        };
-      });
-
-      const BATCH_SIZE = 1000;
-      for (let i = 0; i < rowsData.length; i += BATCH_SIZE) {
-        const chunk = rowsData.slice(i, i + BATCH_SIZE);
-        await ctx.db.row.createMany({
-          data: chunk,
-        });
+        return { success: true };
+      } catch (err) {
+        console.error("🚨 Error in addFakeRows:", err);
+        throw err; // rethrow so client receives it
       }
-
-      return { success: true };
     }),
+
+
     
     getRows: publicProcedure
       .input(z.object({

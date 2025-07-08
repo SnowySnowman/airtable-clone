@@ -35,6 +35,10 @@ export default function BasePage() {
       refetch();
       setActiveTableId(null); // fallback if active one is deleted
     },
+    onError: (err) => {
+      console.error("❌ Delete failed:", err);
+      alert("Failed to delete table: " + err.message);
+    },
   });
 
   // const tables = base?.tables ?? [];
@@ -108,7 +112,8 @@ export default function BasePage() {
                   </button>
                   <button
                     onClick={() => {
-                      if (confirm("Delete this table?")) {
+                      if (table?.id && confirm("Delete this table?")) {
+                        console.log("Deleting table:", table.id);
                         deleteTable.mutate({ tableId: table.id });
                       }
                       setOpenDropdown(null);
