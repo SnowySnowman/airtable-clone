@@ -1,6 +1,151 @@
+
 @import "tailwindcss";
 
 @theme {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+
+:root {
+  --bg-app: #f6f7f8;
+  --border-subtle: #dcdfe4;
+  --font-sans: -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+    
+  /* Text */
+  --text-primary: #2e2e2e;
+  --text-muted: #6b6b6b;
+
+  /* Backgrounds */
+  --bg-default: #ffffff;
+  --bg-muted: #f6f7f9;
+  --bg-hover: #f1f3f5;
+  --bg-selected: #e9eef6;
+
+  /* Borders */
+  --border-default: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.12);
+
+  /* Buttons */
+  --btn-bg: #3a4bff;
+  --btn-hover-bg: #2f3edb;
+  --btn-text: #ffffff;
+
+  /* Tags / Status indicators (inspired by Airtable colours) */
+  --tag-red: #f44336;
+  --tag-orange: #ff9800;
+  --tag-yellow: #ffeb3b;
+  --tag-green: #4caf50;
+  --tag-blue: #2196f3;
+  --tag-purple: #9c27b0;
+  --tag-pink: #e91e63;
+
+  /* Shadows */
+  --shadow-light: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden; /* 👈 Prevent page scrolling */
+  background-color: var(--bg-app); /* Set the screen background */
+  font-family: -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+}
+
+#__next {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Your main container should fill the whole screen */
+.app-container {
+  display: flex;
+  height: 100vh; /* Full screen height */
+  overflow: hidden;
+}
+
+/* Left sidebar (Views panel) */
+.sidebar {
+  width: 256px; /* Same as w-64 */
+  border-right: 1px solid var(--border-default);
+  padding: 1rem;
+  overflow-y: auto;
+  background-color: var(--bg-muted);
+}
+
+/* Main content area (table + header) */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--bg-default);
+}
+
+/* Optional: if you have a fixed header */
+.table-header {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-default);
+}
+
+/* Table area — only this scrolls */
+.table-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+
+
+body {
+  font-family: -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+  background-color: var(--bg-default);
+  color: var(--text-primary);
+
+  font-size: 14px;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  font-weight: 400;
+  /* Border style */
+  border: 1px solid rgba(0, 0, 0, 0.08);
+
+  /* Shadows (use lightly) */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.button {
+  background-color: var(--btn-bg);
+  color: var(--btn-text);
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: var(--shadow-light);
+  font-size: 14px;
+  letter-spacing: -0.003em;
+}
+
+.button:hover {
+  background-color: var(--btn-hover-bg);
+}
+
+.card {
+  background: var(--bg-muted);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-light);
+  padding: 1rem;
+  border-radius: 6px;
+}
+
+h1, h2, h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }

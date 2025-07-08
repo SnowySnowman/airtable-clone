@@ -423,12 +423,11 @@ const tableInstance = useReactTable({
   
   return (
     
-    <div className="flex h-screen">
+    <div className="flex h-screen bg-[var(--bg-app)] font-sans overflow-hidden">
       
       
         {/* Left Sidebar for Views */}
           <div className="w-64 border-r p-4 overflow-y-auto relative">
-            <h2 className="font-semibold mb-2">Views</h2>
 
             {/* Create New View Button + View Type Popup */}
             <div className="mb-4 relative">
@@ -598,7 +597,7 @@ const tableInstance = useReactTable({
 
 
       
-      <div className="flex-1 p-4 overflow-x-auto">
+      <div className="flex-1 flex flex-col p-4 overflow-hidden">
 
         <h1 className="text-xl font-bold mb-4">{table.name}</h1>
         {viewSavedMessage && (
@@ -648,7 +647,7 @@ const tableInstance = useReactTable({
 
           <button
             onClick={() => addRow.mutate({ tableId })}
-            className="bg-blue-500 text-white px-3 py-1 rounded"
+            className="bg-green-500 text-white px-3 py-1 rounded"
           >
             ➕ Add Row
           </button>
@@ -789,10 +788,10 @@ const tableInstance = useReactTable({
         
 
         <div
-          className="h-[600px] overflow-auto border relative"
+          className="flex-1 overflow-auto"
           ref={parentRef}
         >
-          {/* Sticky header table */}
+          {/* Sticky header table
           <table className="table-fixed border-collapse absolute top-0 left-0 z-10 bg-white">
             <colgroup>
               {tableInstance.getFlatHeaders().map((header) => (
@@ -824,7 +823,7 @@ const tableInstance = useReactTable({
                 </tr>
               ))}
             </thead>
-          </table>
+          </table> */}
 
           {/* Virtualised body */}
           <div
