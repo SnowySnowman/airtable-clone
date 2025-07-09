@@ -53,7 +53,7 @@ export const baseRouter = createTRPCRouter({
     }),
 
 
-    getOne: protectedProcedure
+  getOne: protectedProcedure
     .input(z.object({ baseId: z.string() }))
     .query(async ({ input, ctx }) => {
       return ctx.db.base.findUnique({
@@ -66,6 +66,15 @@ export const baseRouter = createTRPCRouter({
             // },
           },
         },
+      });
+    }),
+
+  updateName: protectedProcedure
+    .input(z.object({ baseId: z.string(), name: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.base.update({
+        where: { id: input.baseId },
+        data: { name: input.name },
       });
     }),
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "~/trpc/react";
 import Link from "next/link";
 import TablePage from "~/app/_components/TablePage";
@@ -49,8 +49,22 @@ export default function BasePage() {
     }
   }, [base?.tables]);
 
-  if (isLoading) return <p className="p-4">Loading base...</p>;
-  if (!base) return <p className="p-4">Base not found.</p>;
+  const [isBaseMenuOpen, setIsBaseMenuOpen] = useState(false);
+  const [baseName, setBaseName] = useState("");
+  const baseMenuRef = useRef<HTMLDivElement>(null);
+
+  const updateBaseName = api.base.updateName.useMutation({
+    onSuccess: () => refetch(),
+  });
+
+  const airtableColors = [
+    "#f5d6e0", "#f7e1cf", "#f8eabc", "#d9f4d4", "#d1f3f0", "#d1ebfd", "#d7e2fc", "#f1d4f9", "#e0dafa", "#e6e9ef",
+    "#c02c40", "#bc4f22", "#edbc44", "#46872b", "#7adad4", "#7cc8f9", "#496ed9", "#c22fa3", "#773fe5", "#773fe5",
+    "#894a5a", "#85513c", "#946a29", "#946a29", "#457d78", "#487b9f", "#4b649b", "#7e4475", "#5f4b88", "#5f4b88",
+  ];
+
+
+
 
 
 
@@ -59,123 +73,234 @@ export default function BasePage() {
     currentTableId = tables[0].id;
   }
 
-  // const currentTableId = activeTableId || (tables.length > 0 ? tables[0].id : null);
-  
+  useEffect(() => {
+    if (base?.name) setBaseName(base.name);
+  }, [base?.name]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (baseMenuRef.current && !baseMenuRef.current.contains(e.target as Node)) {
+        setIsBaseMenuOpen(false);
+        if (baseName !== base?.name) {
+          updateBaseName.mutate({ baseId, name: baseName });
+        }
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [baseMenuRef, baseName, base?.name]);
+
+
+
+  if (isLoading) return <p className="p-4">Loading base...</p>;
+  if (!base) return <p className="p-4">Base not found.</p>;
+
 
   return (
-    <div className="p-4">
-      <h1 className="text-xl font-bold mb-4">{base.name}</h1>
 
-      {/* Tabs for tables */}
-      <div className="flex items-center mb-4 space-x-2">
-        {tables.map((table) => {
+    
+    <div className="flex h-screen">
+    {/* Leftmost vertical sidebar */}
+    <div className="w-12 bg-[#F7F7F7] border-r border-gray-200 flex flex-col items-center py-4">
+      
 
-          return (
-            <div key={table.id} className="relative">
-              <div className="flex items-center space-x-1">
-                <button
-                  onClick={() => setActiveTableId(table.id)}
-                  className={`px-4 py-2 rounded-t ${
-                    table.id === currentTableId
-                      ? "bg-white border-t border-l border-r"
-                      : "bg-gray-200"
-                  }`}
+      {/* Add other icons vertically here */}
+      <button className="mb-4">
+        <svg className="w-5 h-5 text-gray-600 hover:text-black" viewBox="0 0 24 24">
+          <use href="/icons/icon_definitions.svg#Airtable" />
+        </svg>
+      </button>
+
+    {/* Add more icons */}
+    </div>
+      <div className="flex-1 overflow-hidden">
+        <div className="pt-4 overflow-hidden h-full">
+
+
+          <div className="w-full px-6 py-2 mb-4 border-b border-gray-200 flex items-center justify-between">
+
+            {/* Base name & dropdown */}
+            <div className="relative inline-block">
+              <button
+                onClick={() => setIsBaseMenuOpen(!isBaseMenuOpen)}
+                className="text-xl font-bold flex items-center gap-3 hover:bg-gray-100 px-2 py-1 rounded"
+              >
+                <svg className="w-5 h-5 text-gray-600 hover:text-black" viewBox="0 0 24 24">
+                  <use href="/icons/icon_definitions.svg#AirtableColoured" />
+                </svg>
+                {baseName}
+                <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+                  <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="1.5" />
+                </svg>
+              </button>
+
+              {isBaseMenuOpen && (
+                <div
+                  ref={baseMenuRef}
+                  className="absolute z-50 mt-2 w-96 rounded-lg shadow-xl border border-gray-200 bg-white p-4"
                 >
-                  {table.name}
-                </button>
+                  {/* Title and actions */}
+                  <div className="flex items-center justify-between mb-4">
+                    <input
+                      value={baseName}
+                      onChange={(e) => setBaseName(e.target.value)}
+                      className="text-2xl w-full px-1 py-0.5 border-transparent border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                    />
+                    <div className="flex items-center gap-2 ml-2">
+                      <button title="Star">
+                        <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                          <use href="/icons/icon_definitions.svg#Star" />
+                        </svg>
+                      </button>
+                      <button title="Share">
+                        <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                          <use href="/icons/icon_definitions.svg#Share" />
+                        </svg>
+                      </button>
+                      <button title="DotsThree">
+                        <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                          <use href="/icons/icon_definitions.svg#DotsThree" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
 
-                {/* ▼ Arrow for dropdown */}
-                <button
-                  onClick={() =>
-                    setOpenDropdown(openDropdown === table.id ? null : table.id)
-                  }
-                  className="px-2 py-2 rounded-t bg-gray-300 hover:bg-gray-400"
-                >
-                  ▼
-                </button>
-              </div>
+                  {/* soft separator */}
+                  <hr className="border-t border-gray-200 my-4" />
 
-              {/* Dropdown menu */}
-              {openDropdown === table.id && (
-                <div className="absolute right-0 mt-1 bg-white border rounded shadow z-10">
-                  <button
-                    onClick={() => {
-                      const newName = prompt("Rename table", table.name);
-                      if (newName) {
-                        renameTable.mutate({ tableId: table.id, name: newName });
-                      }
-                      setOpenDropdown(null);
-                    }}
-                    className="block w-full px-4 py-2 text-left hover:bg-gray-100"
-                  >
-                    📝 Rename
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (table?.id && confirm("Delete this table?")) {
-                        console.log("Deleting table:", table.id);
-                        deleteTable.mutate({ tableId: table.id });
-                      }
-                      setOpenDropdown(null);
-                    }}
-                    className="block w-full px-4 py-2 text-left hover:bg-red-100 text-red-600"
-                  >
-                    🗑️ Delete
-                  </button>
+                  {/* Appearance section */}
+                  <details open>
+                    <summary className="font-medium text-gray-700 cursor-pointer">Appearance</summary>
+
+                    <div className="mt-3">
+                      <div className="flex border-b mb-2">
+                        <button className="border-b-2 border-blue-500 text-sm px-3 py-1 text-blue-600">Color</button>
+                        <button className="text-sm px-3 py-1 text-gray-500">Icon</button>
+                      </div>
+
+                      {/* Color Grid */}
+                      <div className="grid grid-cols-10 gap-2 mt-2">
+                        {airtableColors.map((color, index) => (
+                          <div
+                            key={`color-${index}`}
+                            className="w-6 h-6 rounded-md cursor-pointer border"
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </details>
+
+                  {/* soft separator */}
+                  <hr className="border-t border-gray-200 my-4" />
+
+                  {/* Base guide section (placeholder) */}
+                  <details className="mt-4">
+                    <summary className="font-medium text-gray-700 cursor-pointer">Base guide</summary>
+                    <div className="mt-2 text-sm text-gray-500">Coming soon!</div>
+                  </details>
                 </div>
               )}
             </div>
-          );
-        })}
 
-        {/* New Table button */}
-        {/* <button
-          onClick={() => {
-            const name = prompt("New table name?");
-            // if (name) createTable.mutate({ baseId, name });
-            if (name) {
-              setIsCreatingTable(true);
-              createTable.mutate(
-                { baseId, name },
-                {
-                  onSuccess: async (newTable) => {
-                    await refetch(); // re-fetch base
-                    setActiveTableId(newTable.id); // switch to new tab
-                    setIsCreatingTable(false);     // stop loading
-                  },
-                  onError: (err) => {
-                    alert("Failed to create table: " + err.message);
-                    setIsCreatingTable(false);
-                  },
-                }
-              );
-            }
+            {/* Center: Navigation buttons */}
+            <div className="flex gap-6 text-sm text-gray-600 font-medium">
+              <button className="text-black border-b-2 border-[#A07938] pb-0.5">Data</button>
+              <button className="hover:text-black">Automations</button>
+              <button className="hover:text-black">Interfaces</button>
+              <button className="hover:text-black">Forms</button>
+            </div>
 
-          }}
-          className="px-4 py-2 bg-blue-500 text-white rounded"
-        >
-          + New Table
-        </button> */}
-        {isCreatingTable ? (
-          <button
-            disabled
-            className="px-4 py-2 bg-gray-400 text-white rounded cursor-wait"
-          >
-            Creating...
-          </button>
-        ) : (
-          <button
+
+            {/* Right: Placeholder buttons */}
+            <div className="flex items-center gap-3">
+              <div className="px-3 py-1 bg-gray-100 text-sm rounded-full text-gray-700">Trial: 12 days left</div>
+              <button className="text-sm text-blue-600 hover:underline">See what’s new</button>
+              <div className="bg-[#A07938] text-white px-3 py-1 rounded text-sm font-semibold">Share</div>
+            </div>
+            
+          </div>
+
+
+        {/* Tabs for tables */}
+        <div className="flex items-center mb-4 space-x-2">
+          {tables.map((table) => {
+
+            return (
+              <div key={table.id} className="relative">
+                <div className="flex items-center space-x-1">
+                  <button
+                    onClick={() => setActiveTableId(table.id)}
+                    className={`px-4 py-2 rounded-t ${
+                      table.id === currentTableId
+                        ? "bg-white border-t border-l border-r"
+                        : "bg-gray-200"
+                    }`}
+                  >
+                    {table.name}
+                  </button>
+
+                  {/* ▼ Arrow for dropdown */}
+                  <button
+                    onClick={() =>
+                      setOpenDropdown(openDropdown === table.id ? null : table.id)
+                    }
+                    className="px-2 py-2 rounded-t bg-gray-300 hover:bg-gray-400"
+                  >
+                    ▼
+                  </button>
+                </div>
+
+                {/* Dropdown menu */}
+                {openDropdown === table.id && (
+                  <div className="absolute right-0 mt-1 bg-white border rounded shadow z-10">
+                    <button
+                      onClick={() => {
+                        const newName = prompt("Rename table", table.name);
+                        if (newName) {
+                          renameTable.mutate({ tableId: table.id, name: newName });
+                        }
+                        setOpenDropdown(null);
+                      }}
+                      className="block w-full px-4 py-2 text-left hover:bg-gray-100"
+                    >
+                      📝 Rename
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (table?.id && confirm("Delete this table?")) {
+                          console.log("Deleting table:", table.id);
+                          deleteTable.mutate({ tableId: table.id });
+                        }
+                        setOpenDropdown(null);
+                      }}
+                      className="block w-full px-4 py-2 text-left hover:bg-red-100 text-red-600"
+                    >
+                      🗑️ Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* New Table button */}
+          {/* <button
             onClick={() => {
               const name = prompt("New table name?");
+              // if (name) createTable.mutate({ baseId, name });
               if (name) {
                 setIsCreatingTable(true);
                 createTable.mutate(
                   { baseId, name },
                   {
                     onSuccess: async (newTable) => {
-                      await refetch();
-                      setActiveTableId(newTable.id);
-                      setIsCreatingTable(false);
+                      await refetch(); // re-fetch base
+                      setActiveTableId(newTable.id); // switch to new tab
+                      setIsCreatingTable(false);     // stop loading
                     },
                     onError: (err) => {
                       alert("Failed to create table: " + err.message);
@@ -184,18 +309,59 @@ export default function BasePage() {
                   }
                 );
               }
+
             }}
             className="px-4 py-2 bg-blue-500 text-white rounded"
           >
             + New Table
-          </button>
-        )}
+          </button> */}
+          {isCreatingTable ? (
+            <button
+              disabled
+              className="px-4 py-2 bg-gray-400 text-white rounded cursor-wait"
+            >
+              Creating...
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                const name = prompt("New table name?");
+                if (name) {
+                  setIsCreatingTable(true);
+                  createTable.mutate(
+                    { baseId, name },
+                    {
+                      onSuccess: async (newTable) => {
+                        await refetch();
+                        setActiveTableId(newTable.id);
+                        setIsCreatingTable(false);
+                      },
+                      onError: (err) => {
+                        alert("Failed to create table: " + err.message);
+                        setIsCreatingTable(false);
+                      },
+                    }
+                  );
+                }
+              }}
+              className="px-4 py-2 bg-blue-500 text-white rounded"
+            >
+              + New Table
+            </button>
+          )}
+
+        </div>
+
+        {/* Render selected table in full */}
+        {currentTableId ? <TablePage tableId={currentTableId} /> : <p className="text-gray-500">No table selected</p>}
 
       </div>
 
-      {/* Render selected table in full */}
-      {currentTableId ? <TablePage tableId={currentTableId} /> : <p className="text-gray-500">No table selected</p>}
+      </div>
     </div>
+
+
+
   );
 }
 

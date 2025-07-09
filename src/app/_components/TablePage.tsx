@@ -249,6 +249,21 @@ export default function TablePage({ tableId }: { tableId: string }) {
   }
 });
 
+const [hoveredView, setHoveredView] = useState<string | null>(null);
+
+  function handleSelectView(view: TableView) {
+    const config = view.config as ViewConfig;
+    setSelectedView(view);
+    setFilters(config.filters ?? {});
+    setSort(Array.isArray(config.sort) ? config.sort : []);
+    setSearchQuery(config.search ?? '');
+    const hiddenCols = config.hiddenColumns ?? [];
+    const visibility = Object.fromEntries(
+      table?.columns.map((col) => [col.id, !hiddenCols.includes(col.id)]) ?? []
+    );
+    setColumnVisibility(visibility);
+  }
+
 
   
   
@@ -433,10 +448,26 @@ const tableInstance = useReactTable({
             <div className="mb-4 relative">
               <button
                 onClick={() => setIsViewTypeOpen(true)}
-                className="w-full bg-blue-600 text-white px-3 py-1 rounded"
+                className="w-full flex items-center gap-2 px-2 py-1 text-sm text-gray-700 rounded hover:border hover:border-gray-300 hover:bg-gray-50 transition"
               >
-                ➕ Create view
+                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                  <use href="/icons/icon_definitions.svg#Plus" />
+                </svg>
+                Create new...
               </button>
+
+              {/* Search Bar for Views (non-functional) */}
+              <div className="relative mb-4">
+                <svg className="absolute left-2 top-2.5 w-4 h-4 text-gray-500" viewBox="0 0 24 24">
+                  <use href="/icons/icon_definitions.svg#Lookup" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Find a view"
+                  className="w-full pl-8 pr-3 py-1.5 text-sm text-gray-800 rounded border border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none transition"
+                  disabled // optional
+                />
+              </div>
 
               {isViewTypeOpen &&
                 createPortal(
@@ -473,6 +504,7 @@ const tableInstance = useReactTable({
 
             {/* View List */}
             <ul className="space-y-1 mb-4">
+              {/* Default Grid View */}
               <li>
                 <button
                   onClick={() => {
@@ -482,37 +514,78 @@ const tableInstance = useReactTable({
                     setFilters({});
                     setColumnVisibility({});
                   }}
-                  className={`w-full text-left px-2 py-1 rounded ${
-                    !selectedView ? 'bg-gray-200' : 'hover:bg-gray-100'
+                  onMouseEnter={() => setHoveredView('default')}
+                  onMouseLeave={() => setHoveredView(null)}
+                  className={`group w-full flex items-center justify-between text-left px-2 py-1 text-sm rounded transition ${
+                    !selectedView ? 'bg-gray-300 font-medium' : 'hover:bg-gray-200'
                   }`}
                 >
-                  Grid view
+                  <div className="flex items-center space-x-2">
+                    <svg className="w-4 h-4 fill-current text-gray-600" viewBox="0 0 24 24">
+                      <use
+                        href={`/icons/icon_definitions.svg#${
+                          hoveredView === 'default' ? 'Star' : 'GridFeature'
+                        }`}
+                      />
+                    </svg>
+                    <span className="truncate">Grid view</span>
+                  </div>
+
+                  <div
+                    className={`flex items-center space-x-1 ${
+                      hoveredView === 'default' ? 'opacity-100' : 'opacity-0'
+                    } group-hover:opacity-100 transition`}
+                  >
+                    <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24">
+                      <use href="/icons/icon_definitions.svg#DotsThree" />
+                    </svg>
+                    <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24">
+                      <use href="/icons/icon_definitions.svg#DotsSixVertical" />
+                    </svg>
+                  </div>
                 </button>
               </li>
-              {views?.map((view) => (
-                <li key={view.id}>
-                  <button
-                    onClick={() => {
-                      const config = view.config as ViewConfig;
-                      setSelectedView(view);
-                      setFilters(config.filters ?? {});
-                      setSort(Array.isArray(config.sort) ? config.sort : []);
-                      setSearchQuery(config.search ?? '');
-                      const hiddenCols = config.hiddenColumns ?? [];
-                      const visibility = Object.fromEntries(
-                        table?.columns.map((col) => [col.id, !hiddenCols.includes(col.id)]) ?? []
-                      );
-                      setColumnVisibility(visibility);
-                    }}
-                    className={`w-full text-left px-2 py-1 rounded ${
-                      selectedView?.id === view.id ? 'bg-gray-200' : 'hover:bg-gray-100'
-                    }`}
-                  >
-                    {view.name}
-                  </button>
-                </li>
-              ))}
+
+              {views?.map((view) => {
+                const isActive = selectedView?.id === view.id;
+                return (
+                  
+                  <li key={view.id}>
+                    <button
+                      onClick={() => handleSelectView(view)}
+                      onMouseEnter={() => setHoveredView(view.id)}
+                      onMouseLeave={() => setHoveredView(null)}
+                      className={`group w-full flex items-center justify-between text-left px-2 py-1 text-sm rounded transition ${
+                        isActive ? 'bg-gray-300 font-medium' : 'hover:bg-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <svg className="w-4 h-4 fill-current text-gray-600" viewBox="0 0 24 24">
+                          <use
+                            href={`/icons/icon_definitions.svg#${
+                              hoveredView === view.id ? 'Star' : 'GridFeature'
+                            }`}
+                          />
+                        </svg>
+                        <span className="truncate">{view.name}</span>
+                      </div>
+
+                      {/* Extra icons on hover */}
+                      <div className={`flex items-center space-x-1 ${hoveredView === view.id ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 transition`}>
+                        <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24">
+                          <use href="/icons/icon_definitions.svg#DotsThree" />
+                        </svg>
+                        
+                        <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24">
+                          <use href="/icons/icon_definitions.svg#DotsSixVertical" />
+                        </svg>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
+
           </div>
 
 
