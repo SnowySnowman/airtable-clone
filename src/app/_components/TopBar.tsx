@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import GlobalColVisibilityPopover from './GlobalColVisibilityPopover';
 import GlobalFilterPopover from './GlobalFilterPopover';
 import GlobalSortPopover from './GlobalSortPopover';
+import GlobalSortEditor from './GlobalSortEditor';
 
 
 type FilterCondition = {
@@ -12,6 +13,23 @@ type FilterCondition = {
 };
 
 type SortItem = { columnId: string; order: "asc" | "desc" };
+
+interface TopBarProps {
+  viewName: string;
+  columns: { id: string; name?: string; type: string }[];
+  visibility: Record<string, boolean>;
+  onToggleColumn: (columnId: string, visible: boolean) => void;
+  filters: FilterCondition[];
+  setFilters: React.Dispatch<React.SetStateAction<FilterCondition[]>>;
+  saveCurrentViewConfig: () => void;
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  addFakeRows: (params: { tableId: string; count: number }) => void;
+  tableId: string;
+  sort: SortItem[];
+  setSort: React.Dispatch<React.SetStateAction<SortItem[]>>;
+  onOpenSort: () => void;
+}
 
 export default function TopBar({
   viewName,
@@ -25,19 +43,9 @@ export default function TopBar({
   setSearchQuery,
   addFakeRows,
   tableId,
-}: {
-  viewName: string;
-  columns: { id: string; name?: string; type: string }[]; // ✅ Ensure `type` is included
-  visibility: Record<string, boolean>;
-  onToggleColumn: (columnId: string, visible: boolean) => void;
-  filters: FilterCondition[];
-  setFilters: React.Dispatch<React.SetStateAction<FilterCondition[]>>;
-  saveCurrentViewConfig: () => void;
-  searchQuery: string;
-  setSearchQuery: (q: string) => void;
-  addFakeRows: (params: { tableId: string; count: number }) => void;
-  tableId: string;
-}) {
+  onOpenSort,
+  
+}: TopBarProps) {
   const [showColumnPopover, setShowColumnPopover] = useState(false);
   const buttonRef = useRef<HTMLDivElement>(null);
   const [showFilterPopover, setShowFilterPopover] = useState(false);
@@ -47,6 +55,26 @@ export default function TopBar({
   const [sort, setSort] = useState<SortItem[]>([]);
   const [showSearchInput, setShowSearchInput] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+
+  // When user clicks "Sort" button:
+  const handleOpenSort = () => {
+    setShowSortPopover(true);
+  };
+
+  const sortableColumns = useMemo(() => {
+    return columns
+      .filter(
+        (col): col is { id: string; name: string; type: "TEXT" | "NUMBER" } =>
+          typeof col.name === "string" &&
+          (col.type === "TEXT" || col.type === "NUMBER")
+      )
+      .map((col) => ({
+        id: col.id,
+        name: col.name,
+        type: col.type,
+      }));
+  }, [columns]);
+
 
   // Close popover on outside click
   useEffect(() => {
@@ -142,6 +170,8 @@ export default function TopBar({
           {showColumnPopover && (
             <div className="absolute top-10 right-0 z-50">
               <GlobalColVisibilityPopover
+                tableId={tableId}
+                viewName={viewName}
                 columns={columns}
                 visibility={visibility}
                 onToggle={onToggleColumn}
@@ -188,7 +218,8 @@ export default function TopBar({
         {/* Sort button with popover */}
         <div className="relative" ref={sortButtonRef}>
           <button
-            onClick={() => setShowSortPopover((prev) => !prev)}
+            // onClick={() => setShowSortPopover((prev) => !prev)}
+            onClick={onOpenSort} 
             className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -198,19 +229,35 @@ export default function TopBar({
           </button>
 
           {showSortPopover && (
-            <div className="absolute top-10 right-0 z-50">
-              <GlobalSortPopover
-                columns={columns.map((col) => ({
-                  id: col.id,
-                  name: col.name ?? col.id,
-                  type: col.type === "NUMBER" ? "NUMBER" : "TEXT", // 🔍 enforce the union type
-                }))}
-                sort={[]} // Replace with real state if needed
-                setSort={() => {}} // Replace with real state if needed
-                onClose={() => setShowSortPopover(false)}
-              />
+            <div className="absolute top-full mt-2 right-0 z-50">
+              {sort.length > 0 ? (
+                <GlobalSortEditor
+                  tableId={tableId}
+                  viewName={viewName}
+                  columns={sortableColumns}
+                  sort={sort}
+                  setSort={setSort}
+                  onClose={() => {
+                    setShowSortPopover(false);
+                    saveCurrentViewConfig();
+                  }}
+                />
+              ) : (
+                <GlobalSortPopover
+                  tableId={tableId}
+                  viewName={viewName}
+                  columns={sortableColumns}
+                  sort={sort}
+                  setSort={setSort}
+                  onClose={() => {
+                    setShowSortPopover(false);
+                    saveCurrentViewConfig();
+                  }}
+                />
+              )}
             </div>
           )}
+
         </div>
 
 

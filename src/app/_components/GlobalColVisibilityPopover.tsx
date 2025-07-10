@@ -45,6 +45,8 @@ interface Props {
   visibility: Record<string, boolean>;
   onToggle: (columnId: string, visible: boolean) => void;
   onToggleAll?: (visible: boolean) => void;
+  tableId: string;            
+  viewName: string; 
 }
 
 const GlobalColVisibilityPopover: React.FC<Props> = ({

@@ -30,27 +30,84 @@ export const baseRouter = createTRPCRouter({
     });
   }),
 
+  // create: protectedProcedure
+  //   .input(
+  //     z.object({
+  //       name: z.string().min(1),
+  //     })
+  //   )
+  //   .mutation(async ({ ctx, input }) => {
+  //     try {
+  //       console.log("Creating base for user:", ctx.session?.user?.id);
+  //       const newBase = await ctx.db.base.create({
+  //         data: {
+  //           name: input.name,
+  //           userId: ctx.session.user.id,
+  //         },
+  //       });
+  //       return newBase;
+  //     } catch (error) {
+  //       console.error("❌ Error in base.create:", error);
+  //       throw error; // re-throw so you still get the error client-side
+  //     }
+  //   }),
   create: protectedProcedure
-    .input(
-      z.object({
-        name: z.string().min(1),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      try {
-        console.log("Creating base for user:", ctx.session?.user?.id);
-        const newBase = await ctx.db.base.create({
-          data: {
-            name: input.name,
-            userId: ctx.session.user.id,
+  .input(z.object({ name: z.string().min(1) }))
+  .mutation(async ({ ctx, input }) => {
+    try {
+      const userId = ctx.session.user.id;
+
+      const newBase = await ctx.db.base.create({
+        data: {
+          name: input.name,
+          userId,
+          tables: {
+            create: [
+              {
+                name: "Untitled Table",
+                columns: {
+                  create: [
+                    { name: "name", type: "TEXT", order: 0 },
+                    { name: "age", type: "NUMBER", order: 1 },
+                  ],
+                },
+                rows: {
+                  create: Array.from({ length: 5 }).map(() => ({
+                    values: {
+                      name: "",
+                      age: null,
+                    },
+                  })),
+                },
+                views: {
+                  create: [
+                    {
+                      name: "Grid view",
+                      config: {
+                        filters: [],
+                        sort: [],
+                        hiddenColumns: [],
+                        search: "",
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
           },
-        });
-        return newBase;
-      } catch (error) {
-        console.error("❌ Error in base.create:", error);
-        throw error; // re-throw so you still get the error client-side
-      }
-    }),
+        },
+        include: {
+          tables: true,
+        },
+      });
+
+      return newBase;
+    } catch (error) {
+      console.error("❌ Error in base.create:", error);
+      throw error;
+    }
+  }),
+
 
 
   getOne: protectedProcedure

@@ -22,6 +22,7 @@ import { Dialog } from '@headlessui/react';
 import TopBar from '~/app/_components/TopBar';
 import isEqual from 'lodash.isequal';
 import { Menu } from '@headlessui/react';
+import GlobalSortEditor from './GlobalSortEditor';
 
 
 type TableRow = {
@@ -43,13 +44,15 @@ function isViewConfig(config: unknown): config is ViewConfig {
 export default function TablePage({ tableId }: { tableId: string }) {
   const [rowCount, setRowCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
+  const [sort, setSort] = useState<{ columnId: string; order: "asc" | "desc" }[]>([]);
   const [debouncedSearch] = useDebounce(searchQuery, 300);
-  useEffect(() => {
-    if (!selectedView) return;
+  const [debouncedFilters] = useDebounce(filters, 500);
+  const [debouncedSort] = useDebounce(sort, 500);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
 
-    saveCurrentViewConfig();
-  }, [debouncedSearch]);
-
+  
+  
   const { data: views } = api.table.getViews.useQuery({ tableId });
   const [selectedView, setSelectedView] = useState<TableView | null>(null);
 
@@ -62,15 +65,19 @@ export default function TablePage({ tableId }: { tableId: string }) {
     }
   }, [views, selectedView]);
 
+  useEffect(() => {
+    if (selectedView) saveCurrentViewConfig(); // 🛠️ auto-save whenever debounced state changes
+    }, [debouncedSearch, debouncedFilters, debouncedSort, columnVisibility]);
+
 
   
   const [viewName, setViewName] = useState("");
 //   const [sortConfig, setSortConfig] = useState<{ columnId: string; order: "asc" | "desc" } | undefined>(undefined);
   const [sortConfig, setSortConfig] = useState<typeof sort>([]);
   const [viewSavedMessage, setViewSavedMessage] = useState<string | null>(null);
-  const [filters, setFilters] = useState<FilterCondition[]>([]);
 
-  const [sort, setSort] = useState<{ columnId: string; order: "asc" | "desc" }[]>([]);
+
+
   const [addingRows, setAddingRows] = useState(false);
 
   // const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId });
@@ -82,7 +89,7 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const [isViewTypeOpen, setIsViewTypeOpen] = useState(false);
   const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
   const [newViewType, setNewViewType] = useState<'grid' | null>(null);
-  const [debouncedFilters] = useDebounce(filters, 500);
+
   const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
 
 
@@ -115,9 +122,8 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const columnPopoverRef = useRef<HTMLDivElement>(null);
 
   const [localEdits, setLocalEdits] = useState<Map<string, Map<string, string>>>(new Map());
-
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
-
+  
+  const [showSortEditor, setShowSortEditor] = useState(false);
   
   const [editingColumn, setEditingColumn] = useState<Column | null>(null);
 
@@ -241,7 +247,7 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
     const filtersAsObject: Record<string, any> = {};
     const config = {
       search: searchQuery,
-      sort,
+      sort: sort,
       filters: filtersAsObject,
       hiddenColumns: Object.entries(columnVisibility)
         .filter(([, isVisible]) => !isVisible)
@@ -422,9 +428,6 @@ useEffect(() => {
 
   return all;
 }, [data]);
-
-
-
   
   console.log("DEBUG flatRows:", flatRows);
 
@@ -521,51 +524,6 @@ useEffect(() => {
         </Menu>
       </div>
     ),
-    // cell: ({ row, column, getValue }) => {
-    //   const rowId = row.original.id;
-    //   const columnId = column.id;
-    //   const defaultValue = getValue() as string ?? "";
-    //   const [optimisticCols, setOptimisticCols] = useState<
-    //     { id: string; name: string; type: 'TEXT' | 'NUMBER' }[]
-    //   >([]);
-    //   const [editingValue, setEditingValue] = useState(() =>
-    //     getCellValue(rowId, columnId, defaultValue) ?? ""
-    //   );
-
-    //   useEffect(() => {
-    //     // keep local state in sync if backend updates
-    //     setEditingValue(getCellValue(rowId, columnId, defaultValue));
-    //   }, [defaultValue, rowId, columnId]);
-
-    //   return (
-    //     <input
-    //       className="w-full bg-transparent text-sm px-0 py-0 focus:outline-none focus:ring-0"
-    //       value={editingValue}
-    //       onChange={(e) => setEditingValue(e.target.value)} // ✅ fast local state only
-    //       onBlur={() => {
-    //         const trimmed = String(editingValue).trim();
-    //         if (trimmed !== defaultValue) {
-    //           // ✅ show new value immediately
-    //           setLocalEdits((prev) => {
-    //             const newMap = new Map(prev);
-    //             const rowMap = new Map(newMap.get(rowId) ?? []);
-    //             rowMap.set(columnId, trimmed);
-    //             newMap.set(rowId, rowMap);
-    //             return newMap;
-    //           });
-
-    //           // ✅ update server in background
-    //           updateCell.mutate({
-    //             tableId,
-    //             rowId,
-    //             columnId,
-    //             value: trimmed,
-    //           });
-    //         }
-    //       }}
-    //     />
-    //   );
-    // }
 
     cell: ({ row, column, getValue }) => {
       const rowId = row.original.id;
@@ -583,8 +541,10 @@ useEffect(() => {
       }, [defaultValue, rowId, columnId, localEdits]);
 
       const handleBlur = () => {
-        const trimmed = editingValue.trim();
-        if (trimmed !== defaultValue) {
+        let trimmed: string;
+        trimmed = String(editingValue ?? "").trim();
+
+        if (trimmed !== String(defaultValue).trim()) {
           // Update local cache
           setLocalEdits((prev) => {
             const newMap = new Map(prev);
@@ -689,7 +649,24 @@ const tableInstance = useReactTable({
         setSearchQuery={setSearchQuery}
         addFakeRows={addFakeRows.mutate}
         tableId={tableId}
+        sort={sort}
+        setSort={setSort}
+        onOpenSort={() => setShowSortEditor(true)}
       />
+
+      {showSortEditor && (
+        <GlobalSortEditor
+          tableId={tableId}
+          viewName={selectedView?.name ?? ""}
+          columns={table?.columns ?? []}
+          sort={sort}
+          setSort={setSort}
+          onClose={() => {
+            setShowSortEditor(false);
+            saveCurrentViewConfig();   // ← push the new sort up in one atomic call
+          }}
+        />
+      )}
 
 
       <div className="flex flex-1 overflow-hidden">
@@ -800,7 +777,7 @@ const tableInstance = useReactTable({
         
         {/* Right Panel */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="border-t border-gray-300 flex-1 flex flex-col p-4 overflow-hidden">
+            <div className="border-t border-gray-300 flex-1 flex flex-col overflow-hidden">
 
               {viewSavedMessage && (
                 <div className="mb-4 px-4 py-2 bg-green-100 border border-green-400 text-green-700 rounded shadow">
@@ -809,7 +786,7 @@ const tableInstance = useReactTable({
               )}
 
 
-              <div className="mb-4 flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {/* progress indicator */}
                 {addingRows && (
                     <p className="text-sm text-gray-500 mt-2">
@@ -908,7 +885,7 @@ const tableInstance = useReactTable({
 
                     <tbody>
                       <tr>
-                        <td colSpan={tableInstance.getAllLeafColumns().length} style={{ height: totalHeight, position: 'relative' }}>
+                        <td colSpan={tableInstance.getAllLeafColumns().length+1} style={{ height: totalHeight, position: 'relative' }}>
                           <div className="absolute top-0 left-0 w-full">
                             {virtualRows.map((virtualRow) => {
                               const isAddRow = virtualRow.index >= flatRows.length;
@@ -938,6 +915,7 @@ const tableInstance = useReactTable({
                                 <div
                                   key={`${row.id}-${virtualRow.index}`}
                                   ref={virtualizer.measureElement}
+                                  data-index={virtualRow.index}
                                   style={{
                                     position: 'absolute',
                                     transform: `translateY(${virtualRow.start}px)`,
@@ -945,11 +923,7 @@ const tableInstance = useReactTable({
                                     display: 'flex',
                                     width: '100%',
                                   }}
-                                  className={`relative z-0 flex transition-colors ${
-                                    hoveredRowIndex === virtualRow.index ? 'bg-gray-200' : 'hover:bg-gray-100'
-                                  }`}
-                                  onMouseEnter={() => setHoveredRowIndex(virtualRow.index)}
-                                  onMouseLeave={() => setHoveredRowIndex(null)}
+                                  className="relative z-0 flex transition-colors hover:bg-gray-100"
                                 >
                               
                                 {/* Row numbers */}
@@ -962,11 +936,15 @@ const tableInstance = useReactTable({
                                     boxSizing: 'border-box',
                                   }}
                                 >
-                                  {hoveredRowIndex === virtualRow.index ? (
-                                    <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600" />
-                                  ) : (
-                                    <span className="text-sm text-gray-500">{virtualRow.index + 1}</span>
-                                  )}
+                                  <div className="group relative w-full h-full flex items-center justify-center">
+                                    <input
+                                      type="checkbox"
+                                      className="form-checkbox h-4 w-4 text-blue-600 opacity-0 group-hover:opacity-100 transition"
+                                    />
+                                    <span className="text-sm text-gray-500 absolute group-hover:opacity-0 transition">
+                                      {virtualRow.index + 1}
+                                    </span>
+                                  </div>
                                 </div>
 
 
@@ -1158,11 +1136,6 @@ const tableInstance = useReactTable({
 
 
       </div>
-
-
-
-                  
-      {/* Right content */}
       
     </div>
   );

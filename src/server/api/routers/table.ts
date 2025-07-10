@@ -392,13 +392,13 @@ export const tableRouter = createTRPCRouter({
           }
         }
 
-        if (input.search) {
-          conditions.push(Prisma.sql`
-            EXISTS (
-              SELECT 1 FROM jsonb_each_text("Row"."values") AS kv
-              WHERE kv.value ILIKE ${'%' + input.search + '%'}
-            )
-          `);
+        if (input.search?.trim()) {
+          const search = `%${input.search.trim().toLowerCase()}%`;
+
+          // This extracts all text fields and does a shallow match
+          conditions.push(
+            Prisma.sql`"Row"."values"::text ILIKE ${search}`
+          );
         }
 
 

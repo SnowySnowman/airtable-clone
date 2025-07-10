@@ -4,16 +4,25 @@ import { Trash2 } from "lucide-react";
 type SortItem = { columnId: string; order: "asc" | "desc" };
 
 interface Props {
+  tableId: string;
+  viewName: string;
   columns: { id: string; name: string; type: "TEXT" | "NUMBER" }[];
   sort: SortItem[];
   setSort: React.Dispatch<React.SetStateAction<SortItem[]>>;
   onClose?: () => void;
 }
 
-const GlobalSortEditor: React.FC<Props> = ({ columns, sort, setSort, onClose }) => {
+const GlobalSortEditor: React.FC<Props> = ({ 
+  tableId,
+  viewName,
+  columns, 
+  sort, 
+  setSort, 
+  onClose 
+}) => {
   const ref = useRef<HTMLDivElement>(null);
 
-
+  // 2) click‐outside to close
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -23,6 +32,13 @@ const GlobalSortEditor: React.FC<Props> = ({ columns, sort, setSort, onClose }) 
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
+  
+  // 3) initialise at least one row
+  useEffect(() => {
+    if (sort.length === 0 && columns.length > 0) {
+      setSort([{ columnId: columns[0]!.id, order: "asc" }]);
+    }
+  }, [columns, setSort, sort.length]);
 
 
   const updateItem = (index: number, update: Partial<SortItem>) => {
@@ -48,9 +64,11 @@ const GlobalSortEditor: React.FC<Props> = ({ columns, sort, setSort, onClose }) 
     return columns.find((col) => col.id === columnId)?.type ?? "TEXT";
   };
 
+  console.log("Rendering sort editor with sort items:", sort);
+
   return (
     <div
-      className="w-[460px] bg-white border border-gray-200 rounded shadow-lg p-4 space-y-4"
+      className="w-[460px] bg-white border border-gray-200 rounded shadow-lg p-4 space-y-4 absolute z-[9999] top-[157px] right-20"
       ref={ref}
     >
       {/* Header */}
@@ -125,7 +143,9 @@ const GlobalSortEditor: React.FC<Props> = ({ columns, sort, setSort, onClose }) 
         <span className="text-xs text-gray-700">Automatically sort records</span>
       </div>
     </div>
+    
   );
+  
 };
 
 export default GlobalSortEditor;
