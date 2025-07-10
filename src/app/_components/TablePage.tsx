@@ -89,13 +89,6 @@ export default function TablePage({ tableId }: { tableId: string }) {
 
   
   const parentRef = useRef<HTMLDivElement>(null);
-  // const virtualizer = useVirtualizer({
-  //   count: rowCount,
-  //   getScrollElement: () => parentRef.current,
-  //   estimateSize: () => 47,
-  //   measureElement: (el) => el.getBoundingClientRect().height,
-  //   overscan: 10,
-  // });
 
   
   const virtualizer = useVirtualizer({
@@ -130,15 +123,6 @@ export default function TablePage({ tableId }: { tableId: string }) {
     },
   });
 
-  
-  // const addColumn = api.table.addColumn.useMutation({
-  //   onSuccess: async () => {
-  //     await refetchTable();        // refresh columns
-  //     await refetchRows();         // refresh data (row values)
-  //     setRowCache({});             // clear cache so rows match new columns
-  //     // await utils.table.getTableById.invalidate({ tableId });
-  //   },
-  // });
   const addColumnAndPopulate = api.table.addColumnAndPopulate.useMutation({
     onSuccess: async () => {
       await refetchTable(); // updates column structure
@@ -276,29 +260,6 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
     });
   }
 
-
-  
-
-  
-
-  // const {
-  //   data,
-  //   fetchNextPage,
-  //   hasNextPage,
-  //   isFetchingNextPage,
-  // } = api.table.getRows.useInfiniteQuery(
-  //   { tableId, 
-  //     limit: 100, 
-  //   search: isViewConfig(selectedView?.config) ? selectedView.config.search ?? debouncedSearch : debouncedSearch,
-  //   sort: isViewConfig(selectedView?.config) ? selectedView.config.sort ?? sort : sort,
-  //   filters: isViewConfig(selectedView?.config) ? selectedView.config.filters ?? filters : filters,
-  //   },
-  //   {
-  //     getNextPageParam: (lastPage) => lastPage.nextCursor,
-  //     refetchOnWindowFocus: false,
-  //     enabled: !!tableId,
-  //   }
-  // );
   const {
     data,
     fetchNextPage,
@@ -317,13 +278,6 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
       refetchOnWindowFocus: false,
     }
   );
-
-
-
-  // useEffect(() => {
-  //   if (!data) return;
-  //   setRowCount(data.rows.length + (data.nextCursor ? 1 : 0));
-  // }, [data]);
 
   useEffect(() => {
   if (!data?.pages?.length) return;
@@ -391,24 +345,6 @@ useEffect(() => {
     const rowMap = localEdits.get(rowId);
     return rowMap?.get(columnId) ?? defaultValue;
   }
-
-
-  // const flatRows = useMemo<TableRow[]>(() => {
-  //   return (
-  //     data?.rows.map((row) => ({
-  //       id: row.id,
-  //       ...(typeof row.values === "object" && row.values !== null
-  //         ? row.values as Record<string, string | number>
-  //         : {})
-  //     })) ?? []
-  //   );
-  // }, [data, searchQuery]);
-
-  // const flatRows = useMemo<TableRow[]>(() => {
-  //   return Array.from({ length: rowCount }, (_, i) =>
-  //     rowCache[i] ?? { id: `placeholder-${i}` }
-  //   );
-  // }, [rowCache, rowCount]);
 
   const flatRows = useMemo<TableRow[]>(() => {
     const all = data?.pages.flatMap((page) =>
@@ -529,51 +465,6 @@ useEffect(() => {
         </Menu>
       </div>
     ),
-    // cell: ({ row, column, getValue }) => {
-    //   const rowId = row.original.id;
-    //   const columnId = column.id;
-    //   const defaultValue = getValue() as string ?? "";
-    //   const [optimisticCols, setOptimisticCols] = useState<
-    //     { id: string; name: string; type: 'TEXT' | 'NUMBER' }[]
-    //   >([]);
-    //   const [editingValue, setEditingValue] = useState(() =>
-    //     getCellValue(rowId, columnId, defaultValue) ?? ""
-    //   );
-
-    //   useEffect(() => {
-    //     // keep local state in sync if backend updates
-    //     setEditingValue(getCellValue(rowId, columnId, defaultValue));
-    //   }, [defaultValue, rowId, columnId]);
-
-    //   return (
-    //     <input
-    //       className="w-full bg-transparent text-sm px-0 py-0 focus:outline-none focus:ring-0"
-    //       value={editingValue}
-    //       onChange={(e) => setEditingValue(e.target.value)} // ✅ fast local state only
-    //       onBlur={() => {
-    //         const trimmed = String(editingValue).trim();
-    //         if (trimmed !== defaultValue) {
-    //           // ✅ show new value immediately
-    //           setLocalEdits((prev) => {
-    //             const newMap = new Map(prev);
-    //             const rowMap = new Map(newMap.get(rowId) ?? []);
-    //             rowMap.set(columnId, trimmed);
-    //             newMap.set(rowId, rowMap);
-    //             return newMap;
-    //           });
-
-    //           // ✅ update server in background
-    //           updateCell.mutate({
-    //             tableId,
-    //             rowId,
-    //             columnId,
-    //             value: trimmed,
-    //           });
-    //         }
-    //       }}
-    //     />
-    //   );
-    // }
 
     cell: ({ row, column, getValue }) => {
       const rowId = row.original.id;
@@ -657,15 +548,6 @@ const tableInstance = useReactTable({
     filterFn: 'includesString',
   },
 });
-
-
-  // useEffect(() => {
-  //   const last = virtualRows.at(-1);
-  //   if (!last) return;
-  //   if (last.index >= flatRows.length - 1 && hasNextPage && !isFetchingNextPage) {
-  //     fetchNextPage();
-  //   }
-  // }, [virtualRows, flatRows.length, hasNextPage, isFetchingNextPage, searchQuery]);
 
   useEffect(() => {
     const last = virtualRows.at(-1);
@@ -1167,15 +1049,8 @@ const tableInstance = useReactTable({
             </div>
           </div>
         </Dialog>
-
-
       </div>
-
-
-
-                  
       {/* Right content */}
-      
     </div>
   );
 }
