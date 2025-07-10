@@ -12,6 +12,9 @@ export type ViewConfig = {
   hiddenColumns?: string[];
 };
 
+const filtersSql: Prisma.Sql[] = [];
+const values: any[] = []; // to track bindings
+
 
 export const tableRouter = createTRPCRouter({
   getTableById: publicProcedure
@@ -32,51 +35,66 @@ export const tableRouter = createTRPCRouter({
 
   
     create: protectedProcedure
-      .input(z.object({ baseId: z.string(), name: z.string().min(1) }))
-      .mutation(async ({ ctx, input }) => {
-        const newTable = await ctx.db.table.create({
+    .input(z.object({ baseId: z.string(), name: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const newTable = await ctx.db.table.create({
+        data: {
+          baseId: input.baseId,
+          name: input.name,
+        },
+      });
+
+      // Add default columns
+      const [nameCol, ageCol] = await ctx.db.$transaction([
+        ctx.db.column.create({
           data: {
-            baseId: input.baseId,
-            name: input.name,
+            name: "Name",
+            type: "TEXT",
+            tableId: newTable.id,
+            order: 0,
           },
-        });
+        }),
+        ctx.db.column.create({
+          data: {
+            name: "Age",
+            type: "NUMBER",
+            tableId: newTable.id,
+            order: 1,
+          },
+        }),
+      ]);
 
-        // Add default columns
-        const [nameCol, ageCol] = await ctx.db.$transaction([
-          ctx.db.column.create({
-            data: {
-              name: "Name",
-              type: "TEXT",
-              tableId: newTable.id,
-              order: 0,
-            },
-          }),
-          ctx.db.column.create({
-            data: {
-              name: "Age",
-              type: "NUMBER",
-              tableId: newTable.id,
-              order: 1,
-            },
-          }),
-        ]);
+      // Add 5 fake rows
+      const rowsData = Array.from({ length: 5 }).map(() => ({
+        tableId: newTable.id,
+        values: {
+          [nameCol.id]: faker.person.fullName(),
+          [ageCol.id]: faker.number.int({ min: 18, max: 65 }),
+        },
+      }));
 
-        // Add 5 fake rows
-        const rowsData = Array.from({ length: 5 }).map(() => ({
+      await ctx.db.row.createMany({
+        data: rowsData,
+      });
+
+      // ✅ Add default "Grid view"
+      await ctx.db.tableView.create({
+        data: {
           tableId: newTable.id,
-          values: {
-            [nameCol.id]: faker.person.fullName(),
-            [ageCol.id]: faker.number.int({ min: 18, max: 65 }),
+          name: "Grid view",
+          config: {
+            filters: [],
+            sort: [],
+            search: "",
+            hiddenColumns: [],
           },
-        }));
+        },
+      });
 
-        await ctx.db.row.createMany({
-          data: rowsData,
-        });
+      console.log("created new table with default Grid view");
+      return newTable;
+    }),
 
-        console.log("created new table")
-        return newTable;
-      }),
 
 
   // Rename a table
@@ -176,7 +194,7 @@ export const tableRouter = createTRPCRouter({
     .input(z.object({
       tableId: z.string(),
       name: z.string(),
-      type: z.enum(['text', 'number']),
+      type: z.enum(['TEXT', 'NUMBER']),
       defaultValue: z.string().optional(),  // optional
     }))
     .mutation(async ({ input, ctx }) => {
@@ -315,11 +333,14 @@ export const tableRouter = createTRPCRouter({
           columnId: z.string(),
           order: z.enum(["asc", "desc"]),
         })).optional(),
-        filters: z.record(z.object({
-          type: z.enum(["text", "number"]),
-          op: z.string(),
-          value: z.any(),
-        })).optional(),
+        filters: z.array(
+          z.object({
+            field: z.string(),
+            type: z.enum(['TEXT', 'NUMBER']),
+            op: z.string(),
+            value: z.union([z.string(), z.number(), z.null()]),
+          })
+        ).optional()
       }))
       .query(async ({ ctx, input }) => {
         // ... filters and whereClause stay the same ...
@@ -331,6 +352,46 @@ export const tableRouter = createTRPCRouter({
           : Prisma.sql``;
 
         const conditions: Prisma.Sql[] = [Prisma.sql`"tableId" = ${input.tableId}`];
+
+        if (input.filters) {
+          for (const filter of input.filters) {
+            const jsonField = Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${filter.field}'`)})`;
+
+            if (!filter.op) continue;
+            
+            if (filter.type === "TEXT") {
+              if (filter.op === "contains") {
+                conditions.push(Prisma.sql`${jsonField} ILIKE ${`%${filter.value}%`}`);
+              } else if (filter.op === "equals") {
+                conditions.push(Prisma.sql`${jsonField} = ${filter.value}`);
+              } else if (filter.op === "not_contains") {
+                conditions.push(Prisma.sql`${jsonField} NOT ILIKE ${`%${filter.value}%`}`);
+              } else if (filter.op === "is_empty") {
+                conditions.push(Prisma.sql`(${jsonField} IS NULL OR ${jsonField} = '')`);
+              } else if (filter.op === "is_not_empty") {
+                conditions.push(Prisma.sql`(${jsonField} IS NOT NULL AND ${jsonField} <> '')`);
+              }
+            } else if (filter.type === "NUMBER") {
+              const numVal = Number(filter.value);
+              const numField = Prisma.sql`(${jsonField})::numeric`;
+
+              // If op is not a no-value op but value is invalid, skip
+              if (filter.op !== "is_empty" && filter.op !== "is_not_empty" && isNaN(numVal)) {
+                continue;
+              }
+
+              switch (filter.op) {
+                case ">":
+                  conditions.push(Prisma.sql`${numField} > ${numVal}`);
+                  break;
+                case "<":
+                  conditions.push(Prisma.sql`${numField} < ${numVal}`);
+                  break;
+              }
+            }
+          }
+        }
+
 
         const whereClause = Prisma.sql`${Prisma.join(conditions, ' AND ')}`;
 
@@ -360,177 +421,56 @@ export const tableRouter = createTRPCRouter({
         };
       }),
 
-
-      // getRows: publicProcedure
-      //   .input(z.object({
-      //     tableId: z.string(),
-      //     cursor: z.string().nullish(),
-      //     start: z.number().default(0),
-      //     limit: z.number().default(100),
-      //     search: z.string().optional(), // optional, not fully implemented below
-      //     sort: z.array(z.object({
-      //       columnId: z.string(),
-      //       order: z.enum(["asc", "desc"]),
-      //     })).optional(),
-      //     filters: z.record(z.object({
-      //       type: z.enum(["text", "number"]),
-      //       op: z.string(), // "equals", "contains", ">", "<", etc.
-      //       value: z.any(),
-      //     })).optional(),
-      //   }))
-      //   .query(async ({ ctx, input }) => {
-      //     const table = await ctx.db.table.findUnique({
-      //       where: { id: input.tableId },
-      //       include: { columns: true },
-      //     });
-      //     if (!table) throw new Error("Table not found");
-
-      //     const filterConditions: Prisma.Sql[] = [];
-
-      //     if (input.filters) {
-      //       for (const [columnId, filter] of Object.entries(input.filters)) {
-      //         // const path = Prisma.sql`${columnId}`;
-      //         const jsonField = Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${columnId}'`)})`;
-
-      //         if (filter.type === "text") {
-      //           const value = filter.value;
-      //           if (filter.op === "equals") {
-      //             filterConditions.push(Prisma.sql`${jsonField} = ${value}`);
-      //           } else if (filter.op === "contains") {
-      //             filterConditions.push(Prisma.sql`${jsonField} ILIKE ${`%${value}%`}`);
-      //           } else if (filter.op === "not_contains") {
-      //             filterConditions.push(Prisma.sql`${jsonField} NOT ILIKE ${`%${value}%`}`);
-      //           } else if (filter.op === "is_empty") {
-      //             filterConditions.push(Prisma.sql`(${jsonField} IS NULL OR ${jsonField} = '')`);
-      //           } else if (filter.op === "is_not_empty") {
-      //             filterConditions.push(Prisma.sql`(${jsonField} IS NOT NULL AND ${jsonField} <> '')`);
-      //           }
-      //         } else if (filter.type === "number") {
-      //           const numVal = Number(filter.value);
-      //           if (filter.op === "=") {
-      //             filterConditions.push(Prisma.sql`${jsonField}::numeric = ${numVal}`);
-      //           } else if (filter.op === ">") {
-      //             filterConditions.push(Prisma.sql`${jsonField}::numeric > ${numVal}`);
-      //           } else if (filter.op === "<") {
-      //             filterConditions.push(Prisma.sql`${jsonField}::numeric < ${numVal}`);
-      //           } else if (filter.op === "is_empty") {
-      //             filterConditions.push(Prisma.sql`${jsonField} IS NULL`);
-      //           } else if (filter.op === "is_not_empty") {
-      //             filterConditions.push(Prisma.sql`${jsonField} IS NOT NULL`);
-      //           }
-      //         }
-      //       }
-      //     }
-
-      //     const conditions: Prisma.Sql[] = [Prisma.sql`"tableId" = ${input.tableId}`];
-
-      //     // Add filter conditions
-      //     if (input.filters) {
-      //       for (const [columnId, filter] of Object.entries(input.filters)) {
-      //         const jsonField = Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${columnId}'`)})`;
-
-      //         if (filter.type === "text") {
-      //           const value = filter.value;
-      //           if (filter.op === "equals") {
-      //             conditions.push(Prisma.sql`${jsonField} = ${value}`);
-      //           } else if (filter.op === "contains") {
-      //             conditions.push(Prisma.sql`${jsonField} ILIKE ${`%${value}%`}`);
-      //           } else if (filter.op === "not_contains") {
-      //             conditions.push(Prisma.sql`${jsonField} NOT ILIKE ${`%${value}%`}`);
-      //           } else if (filter.op === "is_empty") {
-      //             conditions.push(Prisma.sql`(${jsonField} IS NULL OR ${jsonField} = '')`);
-      //           } else if (filter.op === "is_not_empty") {
-      //             conditions.push(Prisma.sql`(${jsonField} IS NOT NULL AND ${jsonField} <> '')`);
-      //           }
-      //         } else if (filter.type === "number") {
-      //           const numVal = Number(filter.value);
-      //           if (filter.op === ">") {
-      //             conditions.push(Prisma.sql`${jsonField}::numeric > ${numVal}`);
-      //           } else if (filter.op === "<") {
-      //             conditions.push(Prisma.sql`${jsonField}::numeric < ${numVal}`);
-      //           }
-      //         }
-      //       }
-      //     }
-
-      //     // Add global search — grouped as a single OR block
-      //     if (input.search && input.search.trim() !== "") {
-      //       const searchTerms = table.columns.map((col) =>
-      //         Prisma.sql`jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${col.id}'`)}) ILIKE ${`%${input.search}%`}`
-      //       );
-
-      //       // Wrap search conditions in parentheses and join with OR
-      //       const searchBlock = Prisma.sql`(${Prisma.join(searchTerms, ' OR ')})`;
-      //       conditions.push(searchBlock);
-      //     }
-
-      //     const whereClause = Prisma.sql`${Prisma.join(conditions, ' AND ')}`;
-
-      //     // const sortClause = input.sort
-      //     //   ? Prisma.sql`ORDER BY jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${input.sort.columnId}'`)}) ${Prisma.raw(input.sort.order)}`
-      //     //   : Prisma.sql`ORDER BY "Row"."id" ASC`;
-      //     const sortClause = input.sort?.length
-      //       ? Prisma.sql`ORDER BY ${Prisma.join(
-      //           input.sort.map((s) =>
-      //             Prisma.sql`LOWER(jsonb_extract_path_text("Row"."values", ${Prisma.raw(`'${s.columnId}'`)})) ${Prisma.raw(s.order)}`
-      //           ),
-      //           ','
-      //         )}`
-      //       : Prisma.sql`ORDER BY "Row"."id" ASC`;
-
-
-      //     // const rows = await ctx.db.$queryRaw<Row[]>(Prisma.sql`
-      //     //   SELECT * FROM "Row"
-      //     //   WHERE ${whereClause}
-      //     //   ${sortClause}
-      //     //   LIMIT ${input.limit + 1}
-      //     // `);
-
-      //     const rows = await ctx.db.$queryRaw<Row[]>(Prisma.sql`
-      //       SELECT * FROM "Row"
-      //       WHERE ${whereClause}
-      //       ${sortClause}
-      //       OFFSET ${input.start}
-      //       LIMIT ${input.limit}
-      //     `);
-
-      //     const nextCursor = rows.length > input.limit ? rows.pop()!.id : null;
-
-      //     return {
-      //       rows,
-      //       totalRowCount: number,
-      //     };
-      //   }),
-
-    saveView: publicProcedure
-    .input(z.object({
-      tableId: z.string(),
-      name: z.string(),
-      config: z.object({
+    saveView: protectedProcedure
+    .input(
+      z.object({
+        tableId: z.string(),
+        name: z.string(),
+        config: z.object({
         filters: z.record(z.any()),
-        sort: z.array(
-          z.object({ columnId: z.string(), order: z.enum(["asc", "desc"]) })
-        ).optional(),
+        sort: z.array(z.object({
+          columnId: z.string(),
+          order: z.enum(["asc", "desc"]),
+        })).optional(),
         search: z.string().optional(),
         hiddenColumns: z.array(z.string()).optional(),
       }),
     }))
     .mutation(async ({ ctx, input }) => {
-      try {
-        console.log("Saving view with full config:", JSON.stringify(input.config, null, 2));
-
-        return await ctx.db.tableView.create({
-          data: {
+      try{
+      const existingView = await ctx.db.tableView.findUnique({
+        where: {
+          tableId_name: {
             tableId: input.tableId,
             name: input.name,
+          },
+        },
+      });
+
+      if (existingView) {
+        // ✅ Update existing view config
+        return ctx.db.tableView.update({
+          where: {
+            tableId_name: {
+              tableId: input.tableId,
+              name: input.name,
+            },
+          },
+          data: {
             config: input.config,
-          }
+          },
         });
-      } catch (err) {
-        console.error("❌ Error saving view:", err);
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to save view." });
+      }else {
+        // ❌ Nothing returned before = silent fail!
+        console.warn("View not found. Cannot update.");
+        throw new Error("View not found");
       }
+    }catch(err){
+      console.log(err)
+      throw err;
+    }
     }),
+
 
     getViews: publicProcedure
     .input(z.object({ tableId: z.string() }))
@@ -539,6 +479,48 @@ export const tableRouter = createTRPCRouter({
         where: { tableId: input.tableId },
       });
     }),
+
+    createView: protectedProcedure
+    .input(z.object({
+      tableId: z.string(),
+      name: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Check if a view with the same name already exists for the table
+      const existing = await ctx.db.tableView.findUnique({
+        where: {
+          tableId_name: {
+            tableId: input.tableId,
+            name: input.name,
+          },
+        },
+      });
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A view named "${input.name}" already exists.`,
+        });
+      }
+
+      const newView = await ctx.db.tableView.create({
+        data: {
+          tableId: input.tableId,
+          name: input.name,
+          config: {
+            filters: {},
+            sort: [],
+            search: '',
+            hiddenColumns: [],
+          },
+        },
+      });
+
+      return newView;
+    }),
+
+
+
 
 
 

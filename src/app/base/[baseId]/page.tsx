@@ -113,6 +113,11 @@ export default function BasePage() {
           <use href="/icons/icon_definitions.svg#Airtable" />
         </svg>
       </button>
+      <button className="mb-4">
+        <svg className="w-5 h-5 text-gray-600 hover:text-black" viewBox="0 0 24 24">
+          <use href="/icons/icon_definitions.svg#Bell" />
+        </svg>
+      </button>
 
     {/* Add more icons */}
     </div>
@@ -225,132 +230,105 @@ export default function BasePage() {
           </div>
 
 
-        {/* Tabs for tables */}
-        <div className="flex items-center mb-4 space-x-2">
-          {tables.map((table) => {
-
-            return (
-              <div key={table.id} className="relative">
-                <div className="flex items-center space-x-1">
+        {/* Airtable-style table tab bar */}
+        <div className="m-0 p-0 border-b border-gray-300 bg-[#fefbee] px-4">
+          <div className="flex items-center h-10 space-x-1">
+            {tables.map((table) => {
+              const isActive = table.id === currentTableId;
+              return (
+                <div key={table.id} className="relative flex items-center">
                   <button
                     onClick={() => setActiveTableId(table.id)}
-                    className={`px-4 py-2 rounded-t ${
-                      table.id === currentTableId
-                        ? "bg-white border-t border-l border-r"
-                        : "bg-gray-200"
+                    className={`flex items-center px-3 py-1.5 rounded-t-md border text-sm font-medium ${
+                      isActive
+                        ? "bg-white text-black border-x border-t border-gray-300 -mb-px"
+                        : "bg-[#f5f5f5] text-gray-700 hover:bg-gray-200 border-transparent"
                     }`}
                   >
-                    {table.name}
+                    <span className="truncate max-w-[120px]">{table.name}</span>
+                    <svg
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenDropdown(openDropdown === table.id ? null : table.id);
+                      }}
+                      className="ml-1 w-3 h-3 text-gray-500 hover:text-black cursor-pointer"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="1.5" />
+                    </svg>
                   </button>
 
-                  {/* ▼ Arrow for dropdown */}
-                  <button
-                    onClick={() =>
-                      setOpenDropdown(openDropdown === table.id ? null : table.id)
-                    }
-                    className="px-2 py-2 rounded-t bg-gray-300 hover:bg-gray-400"
-                  >
-                    ▼
-                  </button>
+                  {/* Dropdown menu */}
+                  {openDropdown === table.id && (
+                    <div className="absolute right-0 top-full mt-1 bg-white border rounded shadow z-10">
+                      <button
+                        onClick={() => {
+                          const newName = prompt("Rename table", table.name);
+                          if (newName) {
+                            renameTable.mutate({ tableId: table.id, name: newName });
+                          }
+                          setOpenDropdown(null);
+                        }}
+                        className="block w-full px-4 py-2 text-left hover:bg-gray-100"
+                      >
+                        📝 Rename
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (table.id && confirm("Delete this table?")) {
+                            deleteTable.mutate({ tableId: table.id });
+                          }
+                          setOpenDropdown(null);
+                        }}
+                        className="block w-full px-4 py-2 text-left hover:bg-red-100 text-red-600"
+                      >
+                        🗑️ Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
+              );
+            })}
 
-                {/* Dropdown menu */}
-                {openDropdown === table.id && (
-                  <div className="absolute right-0 mt-1 bg-white border rounded shadow z-10">
-                    <button
-                      onClick={() => {
-                        const newName = prompt("Rename table", table.name);
-                        if (newName) {
-                          renameTable.mutate({ tableId: table.id, name: newName });
-                        }
-                        setOpenDropdown(null);
-                      }}
-                      className="block w-full px-4 py-2 text-left hover:bg-gray-100"
-                    >
-                      📝 Rename
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (table?.id && confirm("Delete this table?")) {
-                          console.log("Deleting table:", table.id);
-                          deleteTable.mutate({ tableId: table.id });
-                        }
-                        setOpenDropdown(null);
-                      }}
-                      className="block w-full px-4 py-2 text-left hover:bg-red-100 text-red-600"
-                    >
-                      🗑️ Delete
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* New Table button */}
-          {/* <button
-            onClick={() => {
-              const name = prompt("New table name?");
-              // if (name) createTable.mutate({ baseId, name });
-              if (name) {
-                setIsCreatingTable(true);
-                createTable.mutate(
-                  { baseId, name },
-                  {
-                    onSuccess: async (newTable) => {
-                      await refetch(); // re-fetch base
-                      setActiveTableId(newTable.id); // switch to new tab
-                      setIsCreatingTable(false);     // stop loading
-                    },
-                    onError: (err) => {
-                      alert("Failed to create table: " + err.message);
-                      setIsCreatingTable(false);
-                    },
+            {/* Add or import button */}
+            {isCreatingTable ? (
+              <button
+                disabled
+                className="ml-2 px-3 py-1.5 text-sm bg-gray-400 text-white rounded-md cursor-wait"
+              >
+                Creating...
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  const name = prompt("New table name?");
+                  if (name) {
+                    setIsCreatingTable(true);
+                    createTable.mutate(
+                      { baseId, name },
+                      {
+                        onSuccess: async (newTable) => {
+                          await refetch();
+                          setActiveTableId(newTable.id);
+                          setIsCreatingTable(false);
+                        },
+                        onError: (err) => {
+                          alert("Failed to create table: " + err.message);
+                          setIsCreatingTable(false);
+                        },
+                      }
+                    );
                   }
-                );
-              }
-
-            }}
-            className="px-4 py-2 bg-blue-500 text-white rounded"
-          >
-            + New Table
-          </button> */}
-          {isCreatingTable ? (
-            <button
-              disabled
-              className="px-4 py-2 bg-gray-400 text-white rounded cursor-wait"
-            >
-              Creating...
-            </button>
-          ) : (
-            <button
-              onClick={() => {
-                const name = prompt("New table name?");
-                if (name) {
-                  setIsCreatingTable(true);
-                  createTable.mutate(
-                    { baseId, name },
-                    {
-                      onSuccess: async (newTable) => {
-                        await refetch();
-                        setActiveTableId(newTable.id);
-                        setIsCreatingTable(false);
-                      },
-                      onError: (err) => {
-                        alert("Failed to create table: " + err.message);
-                        setIsCreatingTable(false);
-                      },
-                    }
-                  );
-                }
-              }}
-              className="px-4 py-2 bg-blue-500 text-white rounded"
-            >
-              + New Table
-            </button>
-          )}
-
+                }}
+                className="ml-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+              >
+                + Add or import
+              </button>
+            )}
+          </div>
         </div>
+
 
         {/* Render selected table in full */}
         {currentTableId ? <TablePage tableId={currentTableId} /> : <p className="text-gray-500">No table selected</p>}

@@ -19,11 +19,20 @@ import GlobalSortPopover from './GlobalSortPopover';
 import GlobalColVisibilityPopover from '~/app/_components/GlobalColVisibilityPopover';
 import { createPortal } from 'react-dom';
 import { Dialog } from '@headlessui/react';
+import TopBar from '~/app/_components/TopBar';
+import isEqual from 'lodash.isequal';
 
 
 type TableRow = {
   id: string;
   [key: string]: string | number;
+};
+
+type FilterCondition = {
+  field: string;
+  type: 'TEXT' | 'NUMBER';
+  op: string;
+  value: string | number | null;
 };
 
 function isViewConfig(config: unknown): config is ViewConfig {
@@ -36,14 +45,24 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const [debouncedSearch] = useDebounce(searchQuery, 300);
   const { data: views } = api.table.getViews.useQuery({ tableId });
   const [selectedView, setSelectedView] = useState<TableView | null>(null);
+
+  useEffect(() => {
+    if (!selectedView && Array.isArray(views) && views.length > 0) {
+      const defaultGridView = views.find((v) => v.name === "Grid view") ?? views[0];
+      if (defaultGridView) {
+        handleSelectView(defaultGridView);
+      }
+    }
+  }, [views, selectedView]);
+
+
+  
   const [viewName, setViewName] = useState("");
 //   const [sortConfig, setSortConfig] = useState<{ columnId: string; order: "asc" | "desc" } | undefined>(undefined);
   const [sortConfig, setSortConfig] = useState<typeof sort>([]);
   const [viewSavedMessage, setViewSavedMessage] = useState<string | null>(null);
-  const [filters, setFilters] = useState<Record<
-    string,
-    { type: "text" | "number"; op: string; value: any }
-  >>({});
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
+
   const [sort, setSort] = useState<{ columnId: string; order: "asc" | "desc" }[]>([]);
   const [addingRows, setAddingRows] = useState(false);
 
@@ -56,6 +75,8 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const [isViewTypeOpen, setIsViewTypeOpen] = useState(false);
   const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
   const [newViewType, setNewViewType] = useState<'grid' | null>(null);
+  const [debouncedFilters] = useDebounce(filters, 500);
+
 
   
   const parentRef = useRef<HTMLDivElement>(null);
@@ -81,6 +102,106 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const virtualRows = virtualizer.getVirtualItems();
   const totalHeight = virtualizer.getTotalSize();
 
+  const [showColumnPopover, setShowColumnPopover] = useState(false);
+  const columnPopoverRef = useRef<HTMLDivElement>(null);
+
+  const [localEdits, setLocalEdits] = useState<Map<string, Map<string, string>>>(new Map());
+
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
+
+
+  const updateCell = api.table.updateCell.useMutation();
+  // const addColumn = api.table.addColumn.useMutation({
+  //   onSuccess: async () => {
+  //     await refetchTable();        // refresh columns
+  //     await refetchRows();         // refresh data (row values)
+  //     setRowCache({});             // clear cache so rows match new columns
+  //     // await utils.table.getTableById.invalidate({ tableId });
+  //   },
+  // });
+  const addColumnAndPopulate = api.table.addColumnAndPopulate.useMutation({
+    onSuccess: async () => {
+      await refetchTable(); // updates column structure
+      await utils.table.getRows.invalidate({ tableId }); // clear rows cache
+      setRowCache({}); // reset client cache
+    },
+  });
+
+
+  const renameColumn = api.table.renameColumn.useMutation({
+    onSuccess: async () => {
+      await refetchTable();
+      await utils.table.getRows.invalidate({ tableId });
+    },
+  });
+
+  const deleteColumn = api.table.deleteColumn.useMutation({
+    onSuccess: async () => {
+      await refetchTable();
+      await utils.table.getRows.invalidate({ tableId });
+      setRowCache({});
+    },
+  });
+
+  const addRow = api.table.addRow.useMutation({
+    onSuccess: async () => {
+      await utils.table.getRows.invalidate({ tableId });
+    },
+  });
+
+  const addFakeRows = api.table.addFakeRows.useMutation({
+    onSuccess: async () => {
+        console.log("✅ 100k rows added successfully");
+        await utils.table.getTableById.invalidate({ tableId });
+        await refetchTable(); // <-- ensure visible update
+    },
+    onError: (err) => {
+        console.error("❌ Failed to add 100k rows:", err);
+        alert("Error adding 100k rows: " + err.message);
+    },
+    });
+
+  const utils = api.useUtils();
+
+  const saveView = api.table.saveView.useMutation({
+  onSuccess: async () => {
+    setViewSavedMessage("✅ View saved successfully!");
+    await utils.table.getViews.invalidate({ tableId });
+
+    // Auto-hide the message after 3 seconds
+    setTimeout(() => setViewSavedMessage(null), 3000);
+  },
+  onError: () => {
+    setViewSavedMessage("❌ Failed to save view. Please try again.");
+    setTimeout(() => setViewSavedMessage(null), 3000);
+  }
+});
+
+const [hoveredView, setHoveredView] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        columnPopoverRef.current &&
+        !columnPopoverRef.current.contains(e.target as Node)
+      ) {
+        setShowColumnPopover(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const createView = api.table.createView.useMutation({
+    onSuccess: async () => {
+      await utils.table.getViews.invalidate({ tableId });
+    },
+    onError: (err) => {
+      alert("Failed to create view: " + err.message);
+    }
+  });
+
+
   // useEffect(() => {
   //   void refetchRows(); // triggers fetch for [start, start + limit)
   // }, [start, debouncedSearch, sort, filters]);
@@ -101,6 +222,40 @@ export default function TablePage({ tableId }: { tableId: string }) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isViewTypeOpen]);
+
+
+  function saveCurrentViewConfig() {
+
+    const filtersAsObject: Record<string, any> = {};
+    const config = {
+      search: searchQuery || undefined,
+      sort,
+      filters: filtersAsObject,
+      hiddenColumns: Object.entries(columnVisibility)
+        .filter(([, isVisible]) => !isVisible)
+        .map(([colId]) => colId),
+    };
+
+    for (const f of filters) {
+      if (f.field && f.op && (f.value !== "" && f.value !== null)) {
+        filtersAsObject[f.field] = {
+          type: f.type.toUpperCase() as 'TEXT' | 'NUMBER',
+          op: f.op,
+          value: f.value,
+        };
+      }
+    }
+
+    const currentConfig = selectedView?.config;
+    if (isEqual(config, currentConfig)) return;
+
+    saveView.mutate({
+      tableId,
+      name: selectedView?.name ?? 'default',
+      config,
+    });
+  }
+
 
   
 
@@ -177,84 +332,20 @@ export default function TablePage({ tableId }: { tableId: string }) {
 
 
   
-  const [localEdits, setLocalEdits] = useState<Map<string, Map<string, string>>>(new Map());
-
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
-
-
-  const updateCell = api.table.updateCell.useMutation();
-  // const addColumn = api.table.addColumn.useMutation({
-  //   onSuccess: async () => {
-  //     await refetchTable();        // refresh columns
-  //     await refetchRows();         // refresh data (row values)
-  //     setRowCache({});             // clear cache so rows match new columns
-  //     // await utils.table.getTableById.invalidate({ tableId });
-  //   },
-  // });
-  const addColumnAndPopulate = api.table.addColumnAndPopulate.useMutation({
-    onSuccess: async () => {
-      await refetchTable(); // updates column structure
-      await utils.table.getRows.invalidate({ tableId }); // clear rows cache
-      setRowCache({}); // reset client cache
-    },
-  });
-
-
-  const renameColumn = api.table.renameColumn.useMutation({
-    onSuccess: async () => {
-      await refetchTable();
-      await utils.table.getRows.invalidate({ tableId });
-    },
-  });
-
-  const deleteColumn = api.table.deleteColumn.useMutation({
-    onSuccess: async () => {
-      await refetchTable();
-      await utils.table.getRows.invalidate({ tableId });
-      setRowCache({});
-    },
-  });
-
-  const addRow = api.table.addRow.useMutation({
-    onSuccess: async () => {
-      await utils.table.getRows.invalidate({ tableId });
-    },
-  });
-
-  const addFakeRows = api.table.addFakeRows.useMutation({
-    onSuccess: async () => {
-        console.log("✅ 100k rows added successfully");
-        await utils.table.getTableById.invalidate({ tableId });
-        await refetchTable(); // <-- ensure visible update
-    },
-    onError: (err) => {
-        console.error("❌ Failed to add 100k rows:", err);
-        alert("Error adding 100k rows: " + err.message);
-    },
-    });
-
-  const utils = api.useUtils();
-
-  const saveView = api.table.saveView.useMutation({
-  onSuccess: async () => {
-    setViewSavedMessage("✅ View saved successfully!");
-    await utils.table.getViews.invalidate({ tableId });
-
-    // Auto-hide the message after 3 seconds
-    setTimeout(() => setViewSavedMessage(null), 3000);
-  },
-  onError: () => {
-    setViewSavedMessage("❌ Failed to save view. Please try again.");
-    setTimeout(() => setViewSavedMessage(null), 3000);
-  }
-});
-
-const [hoveredView, setHoveredView] = useState<string | null>(null);
+  
 
   function handleSelectView(view: TableView) {
     const config = view.config as ViewConfig;
     setSelectedView(view);
-    setFilters(config.filters ?? {});
+    setFilters(
+      Array.isArray(config.filters)
+        ? config.filters
+        : Object.entries(config.filters ?? {}).map(([field, f]) => ({
+            field,
+            ...f,
+            type: f.type.toUpperCase() as 'TEXT' | 'NUMBER',
+          }))
+    );
     setSort(Array.isArray(config.sort) ? config.sort : []);
     setSearchQuery(config.search ?? '');
     const hiddenCols = config.hiddenColumns ?? [];
@@ -348,7 +439,7 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
       const columnId = column.id;
       const defaultValue = getValue() as string ?? "";
       const [optimisticCols, setOptimisticCols] = useState<
-        { id: string; name: string; type: 'text' | 'number' }[]
+        { id: string; name: string; type: 'TEXT' | 'NUMBER' }[]
       >([]);
       const [editingValue, setEditingValue] = useState(() =>
         getCellValue(rowId, columnId, defaultValue) ?? ""
@@ -438,11 +529,24 @@ const tableInstance = useReactTable({
   
   return (
     
-    <div className="flex h-screen bg-[var(--bg-app)] font-sans overflow-hidden">
-      
-      
+    <div className="h-screen bg-white font-sans flex flex-col overflow-hidden">
+      {/* ✅ Top row - full width */}
+      <TopBar
+        viewName={selectedView?.name ?? "Grid view"}
+        columns={table.columns}
+        visibility={columnVisibility}
+        filters={filters}
+        setFilters={setFilters}
+        onToggleColumn={(columnId, visible) =>
+          setColumnVisibility((prev) => ({ ...prev, [columnId]: visible }))
+        }
+        saveCurrentViewConfig={saveCurrentViewConfig}
+      />
+
+
+      <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar for Views */}
-          <div className="w-64 border-r p-4 overflow-y-auto relative">
+          <div className="w-64 border-r border-t border-gray-300 p-4 overflow-y-auto">
 
             {/* Create New View Button + View Type Popup */}
             <div className="mb-4 relative">
@@ -504,48 +608,6 @@ const tableInstance = useReactTable({
 
             {/* View List */}
             <ul className="space-y-1 mb-4">
-              {/* Default Grid View */}
-              <li>
-                <button
-                  onClick={() => {
-                    setSelectedView(null);
-                    setSearchQuery('');
-                    setSort([]);
-                    setFilters({});
-                    setColumnVisibility({});
-                  }}
-                  onMouseEnter={() => setHoveredView('default')}
-                  onMouseLeave={() => setHoveredView(null)}
-                  className={`group w-full flex items-center justify-between text-left px-2 py-1 text-sm rounded transition ${
-                    !selectedView ? 'bg-gray-300 font-medium' : 'hover:bg-gray-200'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2">
-                    <svg className="w-4 h-4 fill-current text-gray-600" viewBox="0 0 24 24">
-                      <use
-                        href={`/icons/icon_definitions.svg#${
-                          hoveredView === 'default' ? 'Star' : 'GridFeature'
-                        }`}
-                      />
-                    </svg>
-                    <span className="truncate">Grid view</span>
-                  </div>
-
-                  <div
-                    className={`flex items-center space-x-1 ${
-                      hoveredView === 'default' ? 'opacity-100' : 'opacity-0'
-                    } group-hover:opacity-100 transition`}
-                  >
-                    <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24">
-                      <use href="/icons/icon_definitions.svg#DotsThree" />
-                    </svg>
-                    <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24">
-                      <use href="/icons/icon_definitions.svg#DotsSixVertical" />
-                    </svg>
-                  </div>
-                </button>
-              </li>
-
               {views?.map((view) => {
                 const isActive = selectedView?.id === view.id;
                 return (
@@ -587,6 +649,343 @@ const tableInstance = useReactTable({
             </ul>
 
           </div>
+        
+        {/* right panel */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="border-t border-gray-300 flex-1 flex flex-col p-4 overflow-hidden">
+
+              {viewSavedMessage && (
+                <div className="mb-4 px-4 py-2 bg-green-100 border border-green-400 text-green-700 rounded shadow">
+                  {viewSavedMessage}
+                </div>
+              )}
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+
+                {/* <GlobalColVisibilityPopover
+                  columns={table.columns}
+                  visibility={columnVisibility}
+                  onToggle={(columnId, visible) => {
+                    setColumnVisibility((prev) => ({
+                      ...prev,
+                      [columnId]: visible,
+                    }));
+                  }}
+                  inlineTrigger={
+                    <div className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer">
+                      <svg className="w-4 h-4" viewBox="0 0 24 24">
+                        <use href="/icons/icon_definitions.svg#EyeSlash" />
+                      </svg>
+                      Hide fields
+                    </div>
+                  }
+                /> */}
+
+
+                <button
+                  onClick={() => {
+                    // const name = prompt("Column name?");
+                    // if (!name) return;
+                    // const type = prompt("Type (text/number)?", "text");
+                    // if (!["text", "number"].includes(type ?? "")) return alert("Invalid type");
+
+                    // addColumn.mutate({ tableId, name, type: type as "text" | "number" });
+                    const name = prompt("Column name?");
+                    if (!name) return;
+                    const type = prompt("Type (text/number)?", "text");
+                    if (!["TEXT", "NUMBER"].includes(type ?? "")) return alert("Invalid type");
+
+                    addColumnAndPopulate.mutate({
+                      tableId,
+                      name,
+                      type: type as "TEXT" | "NUMBER",
+                      defaultValue: "", // optional
+                    });
+
+                  }}
+                  className="bg-green-500 text-white px-3 py-1 rounded"
+                >
+                  ➕ Add Column
+                </button>
+
+                <button
+                  onClick={() => addRow.mutate({ tableId })}
+                  className="bg-green-500 text-white px-3 py-1 rounded"
+                >
+                  ➕ Add Row
+                </button>
+
+                <button
+                    onClick={async () => {
+                        if (confirm("Are you sure you want to add 100,000 fake rows?")) {
+                        setAddingRows(true);
+                        try {
+                            await addFakeRows.mutateAsync({ tableId, count: 100000 });
+                            await utils.table.getRows.invalidate({ tableId }); // Clear tRPC cache
+                            setRowCache({}); // Clear local cache so new rows load cleanly
+                            await fetchNextPage(); // Load more data immediately (optional)
+                            console.log("✅ Rows added and data refreshed");
+                        } catch (err) {
+                            console.error("❌ Failed to add rows:", err);
+                            alert("Failed to add rows: " + (err as Error).message);
+                        } finally {
+                            setAddingRows(false);
+                        }
+                        }
+                    }}
+                    disabled={addingRows}
+                    className="bg-purple-500 text-white px-3 py-1 rounded disabled:opacity-50"
+                    >
+                    {addingRows ? "Adding rows..." : "⚡ Add 100k Rows"}
+                </button>
+                <GlobalSortPopover
+                  columns={table.columns}
+                  sort={sort}
+                  setSort={setSort}
+                />
+                <div className="flex-shrink-0">
+                  <input
+                    type="text"
+                    placeholder="🔍 Search across all cells..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="px-3 py-1 border rounded w-full max-w-sm"
+                  />
+                </div>
+              </div>
+
+
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                {/* progress indicator */}
+                {addingRows && (
+                    <p className="text-sm text-gray-500 mt-2">
+                        ⏳ Please wait... Generating 100,000 rows. This may take a few seconds.
+                    </p>
+                )}
+
+                {/* <div className="mb-4">
+                  <label htmlFor="view-select" className="mr-2 font-medium">View:</label>
+                  <select
+                    id="view-select"
+                    className="px-2 py-1 border rounded"
+                    onChange={(e) => {
+                      const view = views?.find(v => v.id === e.target.value);
+                      // setSelectedView(view ?? null);
+                      if (!view) {
+                        setSelectedView(null);
+                        setSearchQuery("");        // ✅ clear search
+                        // setSort(undefined);
+                        setSort([]);
+                        setFilters({})
+                        setColumnVisibility({});
+                        
+                      } else {
+                        const config = view.config as ViewConfig;
+                        setSelectedView(view);
+                        setFilters(config.filters ?? {});
+                        // setSort(config.sort ?? undefined);
+                        setSort(Array.isArray(config.sort) ? config.sort : []);
+                        setSearchQuery(config.search ?? "");
+
+                        const hiddenCols = config.hiddenColumns ?? [];
+                        const visibility = Object.fromEntries(
+                        table?.columns.map((col) => [col.id, !hiddenCols.includes(col.id)]) ?? []
+                        );
+                        setColumnVisibility(visibility);
+                                        
+                      }
+                    }}
+                  >
+                    <option value="">Default View</option>
+                    {views?.map(view => (
+                      <option key={view.id} value={view.id}>{view.name}</option>
+                    ))}
+                  </select>
+                </div> */}
+
+                {/* <div className="mb-4">
+                  <label htmlFor="view-name" className="mr-2 font-medium">Save Current View:</label>
+                  <input
+                    id="view-name"
+                    type="text"
+                    placeholder="View name"
+                    value={viewName}
+                    onChange={(e) => setViewName(e.target.value)}
+                    className="px-2 py-1 border rounded mr-2"
+                  />
+                  <button
+                    className="bg-gray-800 text-white px-3 py-1 rounded"
+                    onClick={() => {
+                      if (!viewName.trim()) return alert("Enter a name");
+
+                      console.log("Saving view with sort:", sort);
+                      const hiddenColumns = Object.entries(columnVisibility)
+                        .filter(([, isVisible]) => !isVisible)
+                        .map(([colId]) => colId);
+
+                      saveView.mutate({
+                        tableId,
+                        name: viewName.trim(),
+                        config: {
+                          search: searchQuery || undefined,
+                          sort: Array.isArray(sortConfig) ? sortConfig : sortConfig ? [sortConfig] : [],
+                          filters: filters || undefined,        
+                          hiddenColumns,
+                        },
+                      });
+                      
+                      setViewName(""); // clear input after saving
+                    }}
+                  >
+                    💾 Save View
+                  </button>
+                </div> */}
+
+
+              </div>
+              
+
+              <div
+                className="flex-1 overflow-auto"
+                ref={parentRef}
+              >
+                {/* Sticky header table
+                <table className="table-fixed border-collapse absolute top-0 left-0 z-10 bg-white">
+                  <colgroup>
+                    {tableInstance.getFlatHeaders().map((header) => (
+                      <col
+                        key={header.id}
+                        style={{
+                          width: '150px',
+                          minWidth: '150px',
+                          maxWidth: '150px',
+                        }}
+                      />
+                    ))}
+                  </colgroup>
+
+                  <thead>
+                    {tableInstance.getHeaderGroups().map((group) => (
+                      <tr key={group.id}>
+                        {group.headers.map((header) => (
+                          <th
+                            key={header.id}
+                            className="border px-2 py-2"
+                            style={{ height: '40px' }}
+                          >
+                            <div className="flex justify-between items-center">
+                              {flexRender(header.column.columnDef.header, header.getContext())}
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    ))}
+                  </thead>
+                </table> */}
+
+                {/* Virtualised body */}
+                <div
+                  style={{ height: totalHeight, position: 'relative' }}
+                  className="pt-[40px]"
+                >
+                  <table className="table-fixed border-collapse absolute top-0 left-0">
+                    <colgroup>
+                      {tableInstance.getFlatHeaders().map((header) => (
+                        <col
+                          key={header.id}
+                          style={{
+                            width: '150px',
+                            minWidth: '150px',
+                            maxWidth: '150px',
+                          }}
+                        />
+                      ))}
+                    </colgroup>
+
+                    {/* Sticky Header inside scroll container */}
+                    <thead className="sticky top-0 z-20 bg-white">
+                      {tableInstance.getHeaderGroups().map((group) => (
+                        <tr key={group.id}>
+                          {group.headers.map((header) => (
+                            <th
+                              key={header.id}
+                              className="border px-2 py-2 text-left bg-gray-100"
+                              style={{
+                                height: '40px',
+                              }}
+                            >
+                              <div className="flex justify-between items-center">
+                                {flexRender(header.column.columnDef.header, header.getContext())}
+                              </div>
+                            </th>
+                          ))}
+                        </tr>
+                      ))}
+                    </thead>
+
+                    <tbody>
+                      <tr>
+                        <td colSpan={tableInstance.getAllLeafColumns().length} style={{ height: totalHeight, position: 'relative' }}>
+                          <div className="absolute top-0 left-0 w-full">
+                            {virtualRows.map((virtualRow) => {
+                              const row = tableInstance.getRowModel().rows.find(
+                                (r) => r.index === virtualRow.index
+                              );
+
+                              if (!row) {
+                                return (
+                                  <div
+                                    key={`loading-${virtualRow.index}`}
+                                    style={{
+                                      position: 'absolute',
+                                      transform: `translateY(${virtualRow.start}px)`,
+                                      height: `${virtualRow.size}px`,
+                                    }}
+                                    className="text-center text-sm text-gray-400"
+                                  >
+                                    Loading...
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div
+                                  // key={row.id}
+                                  key={`${row.id}-${virtualRow.index}`}
+                                  ref={virtualizer.measureElement}
+                                  style={{
+                                    position: 'absolute',
+                                    transform: `translateY(${virtualRow.start}px)`,
+                                    height: `${virtualRow.size}px`,
+                                    display: 'flex',
+                                  }}
+                                  className="hover:bg-gray-100 transition-colors"
+                                >
+                                  {row.getVisibleCells().map((cell) => (
+                                    <div
+                                      key={cell.id}
+                                      className="border px-2 py-2 leading-snug"
+                                      style={{
+                                        width: '150px',
+                                        minWidth: '150px',
+                                        maxWidth: '150px',
+                                        boxSizing: 'border-box',
+                                      }}
+                                    >
+                                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+        </div>
+      </div>
 
 
         {isViewTypeOpen && (
@@ -644,16 +1043,11 @@ const tableInstance = useReactTable({
                       .filter(([, isVisible]) => !isVisible)
                       .map(([colId]) => colId);
 
-                    saveView.mutate({
+                    createView.mutate({
                       tableId,
                       name: viewName.trim(),
-                      config: {
-                        search: searchQuery || undefined,
-                        sort,
-                        filters,
-                        hiddenColumns,
-                      },
                     });
+
 
                     setViewName('');
                     setIsNameDialogOpen(false);
@@ -665,346 +1059,13 @@ const tableInstance = useReactTable({
             </div>
           </div>
         </Dialog>
-
-
-
-
-      
-      <div className="flex-1 flex flex-col p-4 overflow-hidden">
-
-        <h1 className="text-xl font-bold mb-4">{table.name}</h1>
-        {viewSavedMessage && (
-          <div className="mb-4 px-4 py-2 bg-green-100 border border-green-400 text-green-700 rounded shadow">
-            {viewSavedMessage}
-          </div>
-        )}
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-
-          <GlobalColVisibilityPopover
-            columns={table.columns}
-            visibility={columnVisibility}
-            onToggle={(columnId, visible) => {
-              setColumnVisibility((prev) => ({
-                ...prev,
-                [columnId]: visible,
-              }));
-            }}
-          />
-
-
-          <button
-            onClick={() => {
-              // const name = prompt("Column name?");
-              // if (!name) return;
-              // const type = prompt("Type (text/number)?", "text");
-              // if (!["text", "number"].includes(type ?? "")) return alert("Invalid type");
-
-              // addColumn.mutate({ tableId, name, type: type as "text" | "number" });
-              const name = prompt("Column name?");
-              if (!name) return;
-              const type = prompt("Type (text/number)?", "text");
-              if (!["text", "number"].includes(type ?? "")) return alert("Invalid type");
-
-              addColumnAndPopulate.mutate({
-                tableId,
-                name,
-                type: type as "text" | "number",
-                defaultValue: "", // optional
-              });
-
-            }}
-            className="bg-green-500 text-white px-3 py-1 rounded"
-          >
-            ➕ Add Column
-          </button>
-
-          <button
-            onClick={() => addRow.mutate({ tableId })}
-            className="bg-green-500 text-white px-3 py-1 rounded"
-          >
-            ➕ Add Row
-          </button>
-
-          <button
-              onClick={async () => {
-                  if (confirm("Are you sure you want to add 100,000 fake rows?")) {
-                  setAddingRows(true);
-                  try {
-                      await addFakeRows.mutateAsync({ tableId, count: 100000 });
-                      await utils.table.getRows.invalidate({ tableId }); // Clear tRPC cache
-                      setRowCache({}); // Clear local cache so new rows load cleanly
-                      await fetchNextPage(); // Load more data immediately (optional)
-                      console.log("✅ Rows added and data refreshed");
-                  } catch (err) {
-                      console.error("❌ Failed to add rows:", err);
-                      alert("Failed to add rows: " + (err as Error).message);
-                  } finally {
-                      setAddingRows(false);
-                  }
-                  }
-              }}
-              disabled={addingRows}
-              className="bg-purple-500 text-white px-3 py-1 rounded disabled:opacity-50"
-              >
-              {addingRows ? "Adding rows..." : "⚡ Add 100k Rows"}
-          </button>
-          <GlobalFilterPopover
-            columns={table.columns}
-            filters={filters}
-            setFilters={setFilters}
-          />
-          <GlobalSortPopover
-            columns={table.columns}
-            sort={sort}
-            setSort={setSort}
-          />
-          <div className="flex-shrink-0">
-            <input
-              type="text"
-              placeholder="🔍 Search across all cells..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="px-3 py-1 border rounded w-full max-w-sm"
-            />
-          </div>
-        </div>
-
-
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          {/* progress indicator */}
-          {addingRows && (
-              <p className="text-sm text-gray-500 mt-2">
-                  ⏳ Please wait... Generating 100,000 rows. This may take a few seconds.
-              </p>
-          )}
-
-          {/* <div className="mb-4">
-            <label htmlFor="view-select" className="mr-2 font-medium">View:</label>
-            <select
-              id="view-select"
-              className="px-2 py-1 border rounded"
-              onChange={(e) => {
-                const view = views?.find(v => v.id === e.target.value);
-                // setSelectedView(view ?? null);
-                if (!view) {
-                  setSelectedView(null);
-                  setSearchQuery("");        // ✅ clear search
-                  // setSort(undefined);
-                  setSort([]);
-                  setFilters({})
-                  setColumnVisibility({});
-                  
-                } else {
-                  const config = view.config as ViewConfig;
-                  setSelectedView(view);
-                  setFilters(config.filters ?? {});
-                  // setSort(config.sort ?? undefined);
-                  setSort(Array.isArray(config.sort) ? config.sort : []);
-                  setSearchQuery(config.search ?? "");
-
-                  const hiddenCols = config.hiddenColumns ?? [];
-                  const visibility = Object.fromEntries(
-                  table?.columns.map((col) => [col.id, !hiddenCols.includes(col.id)]) ?? []
-                  );
-                  setColumnVisibility(visibility);
-                                  
-                }
-              }}
-            >
-              <option value="">Default View</option>
-              {views?.map(view => (
-                <option key={view.id} value={view.id}>{view.name}</option>
-              ))}
-            </select>
-          </div> */}
-
-          {/* <div className="mb-4">
-            <label htmlFor="view-name" className="mr-2 font-medium">Save Current View:</label>
-            <input
-              id="view-name"
-              type="text"
-              placeholder="View name"
-              value={viewName}
-              onChange={(e) => setViewName(e.target.value)}
-              className="px-2 py-1 border rounded mr-2"
-            />
-            <button
-              className="bg-gray-800 text-white px-3 py-1 rounded"
-              onClick={() => {
-                if (!viewName.trim()) return alert("Enter a name");
-
-                console.log("Saving view with sort:", sort);
-                const hiddenColumns = Object.entries(columnVisibility)
-                  .filter(([, isVisible]) => !isVisible)
-                  .map(([colId]) => colId);
-
-                saveView.mutate({
-                  tableId,
-                  name: viewName.trim(),
-                  config: {
-                    search: searchQuery || undefined,
-                    sort: Array.isArray(sortConfig) ? sortConfig : sortConfig ? [sortConfig] : [],
-                    filters: filters || undefined,        
-                    hiddenColumns,
-                  },
-                });
-                
-                setViewName(""); // clear input after saving
-              }}
-            >
-              💾 Save View
-            </button>
-          </div> */}
-
-
-        </div>
-        
-
-        <div
-          className="flex-1 overflow-auto"
-          ref={parentRef}
-        >
-          {/* Sticky header table
-          <table className="table-fixed border-collapse absolute top-0 left-0 z-10 bg-white">
-            <colgroup>
-              {tableInstance.getFlatHeaders().map((header) => (
-                <col
-                  key={header.id}
-                  style={{
-                    width: '150px',
-                    minWidth: '150px',
-                    maxWidth: '150px',
-                  }}
-                />
-              ))}
-            </colgroup>
-
-            <thead>
-              {tableInstance.getHeaderGroups().map((group) => (
-                <tr key={group.id}>
-                  {group.headers.map((header) => (
-                    <th
-                      key={header.id}
-                      className="border px-2 py-2"
-                      style={{ height: '40px' }}
-                    >
-                      <div className="flex justify-between items-center">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-          </table> */}
-
-          {/* Virtualised body */}
-          <div
-            style={{ height: totalHeight, position: 'relative' }}
-            className="pt-[40px]"
-          >
-            <table className="table-fixed border-collapse absolute top-0 left-0">
-              <colgroup>
-                {tableInstance.getFlatHeaders().map((header) => (
-                  <col
-                    key={header.id}
-                    style={{
-                      width: '150px',
-                      minWidth: '150px',
-                      maxWidth: '150px',
-                    }}
-                  />
-                ))}
-              </colgroup>
-
-              {/* Sticky Header inside scroll container */}
-              <thead className="sticky top-0 z-20 bg-white">
-                {tableInstance.getHeaderGroups().map((group) => (
-                  <tr key={group.id}>
-                    {group.headers.map((header) => (
-                      <th
-                        key={header.id}
-                        className="border px-2 py-2 text-left bg-gray-100"
-                        style={{
-                          height: '40px',
-                        }}
-                      >
-                        <div className="flex justify-between items-center">
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                ))}
-              </thead>
-
-              <tbody>
-                <tr>
-                  <td colSpan={tableInstance.getAllLeafColumns().length} style={{ height: totalHeight, position: 'relative' }}>
-                    <div className="absolute top-0 left-0 w-full">
-                      {virtualRows.map((virtualRow) => {
-                        const row = tableInstance.getRowModel().rows.find(
-                          (r) => r.index === virtualRow.index
-                        );
-
-                        if (!row) {
-                          return (
-                            <div
-                              key={`loading-${virtualRow.index}`}
-                              style={{
-                                position: 'absolute',
-                                transform: `translateY(${virtualRow.start}px)`,
-                                height: `${virtualRow.size}px`,
-                              }}
-                              className="text-center text-sm text-gray-400"
-                            >
-                              Loading...
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <div
-                            // key={row.id}
-                            key={`${row.id}-${virtualRow.index}`}
-                            ref={virtualizer.measureElement}
-                            style={{
-                              position: 'absolute',
-                              transform: `translateY(${virtualRow.start}px)`,
-                              height: `${virtualRow.size}px`,
-                              display: 'flex',
-                            }}
-                            className="hover:bg-gray-100 transition-colors"
-                          >
-                            {row.getVisibleCells().map((cell) => (
-                              <div
-                                key={cell.id}
-                                className="border px-2 py-2 leading-snug"
-                                style={{
-                                  width: '150px',
-                                  minWidth: '150px',
-                                  maxWidth: '150px',
-                                  boxSizing: 'border-box',
-                                }}
-                              >
-                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-
-
-
       </div>
+
+
+
+                  
+      {/* Right content */}
+      
     </div>
   );
 }
