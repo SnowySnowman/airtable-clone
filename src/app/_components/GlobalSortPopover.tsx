@@ -8,11 +8,14 @@ interface Props {
   sort: SortItem[];
   setSort: React.Dispatch<React.SetStateAction<SortItem[]>>;
   onClose?: () => void;
+  tableId: string;
+  viewName: string; 
 }
 
-const GlobalSortPopover: React.FC<Props> = ({ columns, sort, setSort, onClose }) => {
+const GlobalSortPopover: React.FC<Props> = ({ tableId, viewName, columns, sort, setSort, onClose }) => {
   const [mode, setMode] = useState<"list" | "editor">(sort.length > 0 ? "editor" : "list");
   const [pendingColumn, setPendingColumn] = useState<string | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
 
   // When user selects a column from the list, set that as the first sort item
   useEffect(() => {
@@ -26,6 +29,8 @@ const GlobalSortPopover: React.FC<Props> = ({ columns, sort, setSort, onClose })
   if (mode === "editor") {
     return (
       <GlobalSortEditor
+        tableId={tableId}
+        viewName={viewName}
         columns={columns}
         sort={sort}
         setSort={setSort}

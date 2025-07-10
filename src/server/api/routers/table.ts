@@ -392,6 +392,15 @@ export const tableRouter = createTRPCRouter({
           }
         }
 
+        if (input.search?.trim()) {
+          const search = `%${input.search.trim().toLowerCase()}%`;
+
+          // This extracts all text fields and does a shallow match
+          conditions.push(
+            Prisma.sql`"Row"."values"::text ILIKE ${search}`
+          );
+        }
+
 
         const whereClause = Prisma.sql`${Prisma.join(conditions, ' AND ')}`;
 

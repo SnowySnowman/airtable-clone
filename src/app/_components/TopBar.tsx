@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import GlobalColVisibilityPopover from './GlobalColVisibilityPopover';
 import GlobalFilterPopover from './GlobalFilterPopover';
 import GlobalSortPopover from './GlobalSortPopover';
+import GlobalSortEditor from './GlobalSortEditor';
 
 
 type FilterCondition = {
@@ -169,6 +170,8 @@ export default function TopBar({
           {showColumnPopover && (
             <div className="absolute top-10 right-0 z-50">
               <GlobalColVisibilityPopover
+                tableId={tableId}
+                viewName={viewName}
                 columns={columns}
                 visibility={visibility}
                 onToggle={onToggleColumn}
@@ -227,17 +230,34 @@ export default function TopBar({
 
           {showSortPopover && (
             <div className="absolute top-full mt-2 right-0 z-50">
-              <GlobalSortPopover
-                columns={sortableColumns}
-                sort={sort}
-                setSort={setSort}
-                onClose={() => {
-                  setShowSortPopover(false);
-                  saveCurrentViewConfig();
-                }}
-              />
+              {sort.length > 0 ? (
+                <GlobalSortEditor
+                  tableId={tableId}
+                  viewName={viewName}
+                  columns={sortableColumns}
+                  sort={sort}
+                  setSort={setSort}
+                  onClose={() => {
+                    setShowSortPopover(false);
+                    saveCurrentViewConfig();
+                  }}
+                />
+              ) : (
+                <GlobalSortPopover
+                  tableId={tableId}
+                  viewName={viewName}
+                  columns={sortableColumns}
+                  sort={sort}
+                  setSort={setSort}
+                  onClose={() => {
+                    setShowSortPopover(false);
+                    saveCurrentViewConfig();
+                  }}
+                />
+              )}
             </div>
           )}
+
         </div>
 
 
