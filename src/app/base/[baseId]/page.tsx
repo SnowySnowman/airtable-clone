@@ -125,7 +125,7 @@ export default function BasePage() {
         <div className="pt-4 overflow-hidden h-full">
 
 
-          <div className="w-full px-6 py-2 mb-4 border-b border-gray-200 flex items-center justify-between">
+          <div className="w-full px-6 py-2 border-b border-gray-200 flex items-center justify-between">
 
             {/* Base name & dropdown */}
             <div className="relative inline-block">

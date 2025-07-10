@@ -122,7 +122,15 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const [editingColumn, setEditingColumn] = useState<Column | null>(null);
 
 
-  const updateCell = api.table.updateCell.useMutation();
+  const updateCell = api.table.updateCell.useMutation({
+    // prevent UI from being disrupted
+    onSuccess: () => {
+      console.log("✅ Cell updated");
+      // no refetch or invalidation here
+    },
+  });
+
+  
   // const addColumn = api.table.addColumn.useMutation({
   //   onSuccess: async () => {
   //     await refetchTable();        // refresh columns
@@ -583,8 +591,11 @@ useEffect(() => {
       }, [defaultValue, rowId, columnId, localEdits]);
 
       const handleBlur = () => {
-        const trimmed = editingValue.trim();
+        let trimmed: string;
+        trimmed = String(editingValue ?? "");
+        
         if (trimmed !== defaultValue) {
+
           // Update local cache
           setLocalEdits((prev) => {
             const newMap = new Map(prev);
@@ -800,7 +811,7 @@ const tableInstance = useReactTable({
         
         {/* Right Panel */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="border-t border-gray-300 flex-1 flex flex-col p-4 overflow-hidden">
+            <div className="border-t border-gray-300 flex-1 flex flex-col overflow-hidden">
 
               {viewSavedMessage && (
                 <div className="mb-4 px-4 py-2 bg-green-100 border border-green-400 text-green-700 rounded shadow">
@@ -809,7 +820,7 @@ const tableInstance = useReactTable({
               )}
 
 
-              <div className="mb-4 flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {/* progress indicator */}
                 {addingRows && (
                     <p className="text-sm text-gray-500 mt-2">
@@ -908,7 +919,7 @@ const tableInstance = useReactTable({
 
                     <tbody>
                       <tr>
-                        <td colSpan={tableInstance.getAllLeafColumns().length} style={{ height: totalHeight, position: 'relative' }}>
+                        <td colSpan={tableInstance.getAllLeafColumns().length+1} style={{ height: totalHeight, position: 'relative' }}>
                           <div className="absolute top-0 left-0 w-full">
                             {virtualRows.map((virtualRow) => {
                               const isAddRow = virtualRow.index >= flatRows.length;
@@ -938,6 +949,7 @@ const tableInstance = useReactTable({
                                 <div
                                   key={`${row.id}-${virtualRow.index}`}
                                   ref={virtualizer.measureElement}
+                                  data-index={virtualRow.index}
                                   style={{
                                     position: 'absolute',
                                     transform: `translateY(${virtualRow.start}px)`,
@@ -945,11 +957,7 @@ const tableInstance = useReactTable({
                                     display: 'flex',
                                     width: '100%',
                                   }}
-                                  className={`relative z-0 flex transition-colors ${
-                                    hoveredRowIndex === virtualRow.index ? 'bg-gray-200' : 'hover:bg-gray-100'
-                                  }`}
-                                  onMouseEnter={() => setHoveredRowIndex(virtualRow.index)}
-                                  onMouseLeave={() => setHoveredRowIndex(null)}
+                                  className="relative z-0 flex transition-colors hover:bg-gray-100"
                                 >
                               
                                 {/* Row numbers */}
@@ -962,11 +970,15 @@ const tableInstance = useReactTable({
                                     boxSizing: 'border-box',
                                   }}
                                 >
-                                  {hoveredRowIndex === virtualRow.index ? (
-                                    <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600" />
-                                  ) : (
-                                    <span className="text-sm text-gray-500">{virtualRow.index + 1}</span>
-                                  )}
+                                  <div className="group relative w-full h-full flex items-center justify-center">
+                                    <input
+                                      type="checkbox"
+                                      className="form-checkbox h-4 w-4 text-blue-600 opacity-0 group-hover:opacity-100 transition"
+                                    />
+                                    <span className="text-sm text-gray-500 absolute group-hover:opacity-0 transition">
+                                      {virtualRow.index + 1}
+                                    </span>
+                                  </div>
                                 </div>
 
 

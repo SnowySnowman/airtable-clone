@@ -1,8 +1,7 @@
 # How to run locally
+On first time, run: ```npm install```
 local database: ```npx prisma studio```\
 local server: ```npm run dev```
-
-
 
 
 # Create T3 App
