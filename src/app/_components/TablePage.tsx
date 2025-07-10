@@ -43,13 +43,15 @@ function isViewConfig(config: unknown): config is ViewConfig {
 export default function TablePage({ tableId }: { tableId: string }) {
   const [rowCount, setRowCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
+  const [sort, setSort] = useState<{ columnId: string; order: "asc" | "desc" }[]>([]);
   const [debouncedSearch] = useDebounce(searchQuery, 300);
-  useEffect(() => {
-    if (!selectedView) return;
+  const [debouncedFilters] = useDebounce(filters, 500);
+  const [debouncedSort] = useDebounce(sort, 500);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
 
-    saveCurrentViewConfig();
-  }, [debouncedSearch]);
-
+  
+  
   const { data: views } = api.table.getViews.useQuery({ tableId });
   const [selectedView, setSelectedView] = useState<TableView | null>(null);
 
@@ -62,15 +64,26 @@ export default function TablePage({ tableId }: { tableId: string }) {
     }
   }, [views, selectedView]);
 
+  useEffect(() => {
+    if (!selectedView) return;
+
+    saveCurrentViewConfig();
+  }, [
+  debouncedSearch,
+  debouncedFilters,
+  debouncedSort,
+  columnVisibility,
+]);
+
 
   
   const [viewName, setViewName] = useState("");
 //   const [sortConfig, setSortConfig] = useState<{ columnId: string; order: "asc" | "desc" } | undefined>(undefined);
   const [sortConfig, setSortConfig] = useState<typeof sort>([]);
   const [viewSavedMessage, setViewSavedMessage] = useState<string | null>(null);
-  const [filters, setFilters] = useState<FilterCondition[]>([]);
 
-  const [sort, setSort] = useState<{ columnId: string; order: "asc" | "desc" }[]>([]);
+
+
   const [addingRows, setAddingRows] = useState(false);
 
   // const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId });
@@ -82,7 +95,7 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const [isViewTypeOpen, setIsViewTypeOpen] = useState(false);
   const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
   const [newViewType, setNewViewType] = useState<'grid' | null>(null);
-  const [debouncedFilters] = useDebounce(filters, 500);
+
   const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
 
 
@@ -115,8 +128,6 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const columnPopoverRef = useRef<HTMLDivElement>(null);
 
   const [localEdits, setLocalEdits] = useState<Map<string, Map<string, string>>>(new Map());
-
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
 
   
   const [editingColumn, setEditingColumn] = useState<Column | null>(null);
@@ -241,7 +252,7 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
     const filtersAsObject: Record<string, any> = {};
     const config = {
       search: searchQuery,
-      sort,
+      sort: sort,
       filters: filtersAsObject,
       hiddenColumns: Object.entries(columnVisibility)
         .filter(([, isVisible]) => !isVisible)
@@ -800,7 +811,7 @@ const tableInstance = useReactTable({
         
         {/* Right Panel */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="border-t border-gray-300 flex-1 flex flex-col p-4 overflow-hidden">
+            <div className="border-t border-gray-300 flex-1 flex flex-col overflow-hidden">
 
               {viewSavedMessage && (
                 <div className="mb-4 px-4 py-2 bg-green-100 border border-green-400 text-green-700 rounded shadow">
@@ -809,7 +820,7 @@ const tableInstance = useReactTable({
               )}
 
 
-              <div className="mb-4 flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {/* progress indicator */}
                 {addingRows && (
                     <p className="text-sm text-gray-500 mt-2">
@@ -908,7 +919,7 @@ const tableInstance = useReactTable({
 
                     <tbody>
                       <tr>
-                        <td colSpan={tableInstance.getAllLeafColumns().length} style={{ height: totalHeight, position: 'relative' }}>
+                        <td colSpan={tableInstance.getAllLeafColumns().length+1} style={{ height: totalHeight, position: 'relative' }}>
                           <div className="absolute top-0 left-0 w-full">
                             {virtualRows.map((virtualRow) => {
                               const isAddRow = virtualRow.index >= flatRows.length;
@@ -1158,11 +1169,6 @@ const tableInstance = useReactTable({
 
 
       </div>
-
-
-
-                  
-      {/* Right content */}
       
     </div>
   );

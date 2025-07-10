@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import GlobalColVisibilityPopover from './GlobalColVisibilityPopover';
 import GlobalFilterPopover from './GlobalFilterPopover';
 import GlobalSortPopover from './GlobalSortPopover';
@@ -47,6 +47,26 @@ export default function TopBar({
   const [sort, setSort] = useState<SortItem[]>([]);
   const [showSearchInput, setShowSearchInput] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+
+  // When user clicks "Sort" button:
+  const handleOpenSort = () => {
+    setShowSortPopover(true);
+  };
+
+  const sortableColumns = useMemo(() => {
+    return columns
+      .filter(
+        (col): col is { id: string; name: string; type: "TEXT" | "NUMBER" } =>
+          typeof col.name === "string" &&
+          (col.type === "TEXT" || col.type === "NUMBER")
+      )
+      .map((col) => ({
+        id: col.id,
+        name: col.name,
+        type: col.type,
+      }));
+  }, [columns]);
+
 
   // Close popover on outside click
   useEffect(() => {
@@ -198,15 +218,11 @@ export default function TopBar({
           </button>
 
           {showSortPopover && (
-            <div className="absolute top-10 right-0 z-50">
+            <div className="absolute top-full mt-2 right-0 z-50">
               <GlobalSortPopover
-                columns={columns.map((col) => ({
-                  id: col.id,
-                  name: col.name ?? col.id,
-                  type: col.type === "NUMBER" ? "NUMBER" : "TEXT", // 🔍 enforce the union type
-                }))}
-                sort={[]} // Replace with real state if needed
-                setSort={() => {}} // Replace with real state if needed
+                columns={sortableColumns}
+                sort={sort}
+                setSort={setSort}
                 onClose={() => setShowSortPopover(false)}
               />
             </div>

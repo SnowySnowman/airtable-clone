@@ -12,16 +12,16 @@ interface Props {
 
 const GlobalSortPopover: React.FC<Props> = ({ columns, sort, setSort, onClose }) => {
   const [mode, setMode] = useState<"list" | "editor">(sort.length > 0 ? "editor" : "list");
-  const [initialColumnId, setInitialColumnId] = useState<string | null>(null);
-  
+  const [pendingColumn, setPendingColumn] = useState<string | null>(null);
 
-
+  // When user selects a column from the list, set that as the first sort item
   useEffect(() => {
-    // auto-enter editor if sort becomes non-empty from outside
-    if (sort.length > 0 && mode !== "editor") {
+    if (pendingColumn) {
+      setSort([{ columnId: pendingColumn, order: "asc" }]);
       setMode("editor");
+      setPendingColumn(null);
     }
-  }, [sort.length, mode]);
+  }, [pendingColumn]);
 
   if (mode === "editor") {
     return (
@@ -34,6 +34,7 @@ const GlobalSortPopover: React.FC<Props> = ({ columns, sort, setSort, onClose })
     );
   }
 
+  // Column list (only shown when no sort exists)
   return (
     <div className="w-80 bg-white border border-gray-200 rounded shadow-xl">
       {/* Top Row */}
@@ -62,18 +63,14 @@ const GlobalSortPopover: React.FC<Props> = ({ columns, sort, setSort, onClose })
         </div>
       </div>
 
-      {/* Field list */}
+      {/* Column buttons */}
       <div className="px-4 py-2 space-y-1 max-h-60 overflow-y-auto">
         {columns.map((col) => (
           <button
             key={col.id}
             onClick={() => {
-              setSort([]); // Clear existing sort
-              setInitialColumnId(col.id); // Track what was selected
-              setMode("editor"); // Switch view
+              setPendingColumn(col.id);
             }}
-
-
             className="w-full text-left text-sm text-gray-800 hover:bg-gray-100 px-2 py-1 rounded"
           >
             {col.name}

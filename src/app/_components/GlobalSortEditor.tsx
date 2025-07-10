@@ -1,19 +1,36 @@
 import React, { useEffect, useRef } from "react";
 import { Trash2 } from "lucide-react";
+import { api } from '~/trpc/react';
 
 type SortItem = { columnId: string; order: "asc" | "desc" };
 
 interface Props {
+  tableId: string;
+  viewName: string;
   columns: { id: string; name: string; type: "TEXT" | "NUMBER" }[];
   sort: SortItem[];
   setSort: React.Dispatch<React.SetStateAction<SortItem[]>>;
   onClose?: () => void;
 }
 
-const GlobalSortEditor: React.FC<Props> = ({ columns, sort, setSort, onClose }) => {
+const GlobalSortEditor: React.FC<Props> = ({ 
+  tableId,
+  viewName,
+  columns, 
+  sort, 
+  setSort, 
+  onClose 
+}) => {
   const ref = useRef<HTMLDivElement>(null);
 
+  // 1) set up your tRPC mutation
+  const saveView = api.table.saveView.useMutation({
+    onError(err) {
+      console.error("Failed to save view:", err);
+    },
+  });
 
+  // 2) click‐outside to close
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -23,6 +40,38 @@ const GlobalSortEditor: React.FC<Props> = ({ columns, sort, setSort, onClose }) 
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
+  
+  // 3) initialise at least one row
+  useEffect(() => {
+    if (sort.length === 0 && columns.length > 0) {
+      setSort([{ columnId: columns[0]!.id, order: "asc" }]);
+    }
+  }, [columns, setSort, sort.length]);
+
+  // 4) whenever `sort` changes, push it up to the backend
+  useEffect(() => {
+    // guard: only save if the view exists and sort is non-empty
+    if (!viewName || sort.length === 0) return;
+
+    console.log("⏳ About to saveView:", {
+      tableId,
+      name: viewName,
+      sort,
+    });
+
+    saveView.mutate({
+      tableId,
+      name: viewName,
+      config: {
+        // you can spread in your other config pieces here
+        filters: {},            // or pass in your real filters
+        sort,
+        search: undefined,
+        hiddenColumns: undefined,
+      },
+    });
+  }, [sort, tableId, viewName, saveView]);
+
 
 
   const updateItem = (index: number, update: Partial<SortItem>) => {
@@ -47,6 +96,8 @@ const GlobalSortEditor: React.FC<Props> = ({ columns, sort, setSort, onClose }) 
   const getColumnType = (columnId: string) => {
     return columns.find((col) => col.id === columnId)?.type ?? "TEXT";
   };
+
+  console.log("Rendering sort editor with sort items:", sort);
 
   return (
     <div
@@ -125,7 +176,9 @@ const GlobalSortEditor: React.FC<Props> = ({ columns, sort, setSort, onClose }) 
         <span className="text-xs text-gray-700">Automatically sort records</span>
       </div>
     </div>
+    
   );
+  
 };
 
 export default GlobalSortEditor;

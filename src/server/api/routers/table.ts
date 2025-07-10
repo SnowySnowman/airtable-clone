@@ -392,15 +392,6 @@ export const tableRouter = createTRPCRouter({
           }
         }
 
-        if (input.search) {
-          conditions.push(Prisma.sql`
-            EXISTS (
-              SELECT 1 FROM jsonb_each_text("Row"."values") AS kv
-              WHERE kv.value ILIKE ${'%' + input.search + '%'}
-            )
-          `);
-        }
-
 
         const whereClause = Prisma.sql`${Prisma.join(conditions, ' AND ')}`;
 
