@@ -1,6 +1,5 @@
 import React, { useEffect, useRef } from "react";
 import { Trash2 } from "lucide-react";
-import { api } from '~/trpc/react';
 
 type SortItem = { columnId: string; order: "asc" | "desc" };
 
@@ -23,13 +22,6 @@ const GlobalSortEditor: React.FC<Props> = ({
 }) => {
   const ref = useRef<HTMLDivElement>(null);
 
-  // 1) set up your tRPC mutation
-  const saveView = api.table.saveView.useMutation({
-    onError(err) {
-      console.error("Failed to save view:", err);
-    },
-  });
-
   // 2) click‐outside to close
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -47,31 +39,6 @@ const GlobalSortEditor: React.FC<Props> = ({
       setSort([{ columnId: columns[0]!.id, order: "asc" }]);
     }
   }, [columns, setSort, sort.length]);
-
-  // 4) whenever `sort` changes, push it up to the backend
-  useEffect(() => {
-    // guard: only save if the view exists and sort is non-empty
-    if (!viewName || sort.length === 0) return;
-
-    console.log("⏳ About to saveView:", {
-      tableId,
-      name: viewName,
-      sort,
-    });
-
-    saveView.mutate({
-      tableId,
-      name: viewName,
-      config: {
-        // you can spread in your other config pieces here
-        filters: {},            // or pass in your real filters
-        sort,
-        search: undefined,
-        hiddenColumns: undefined,
-      },
-    });
-  }, [sort, tableId, viewName, saveView]);
-
 
 
   const updateItem = (index: number, update: Partial<SortItem>) => {
@@ -101,7 +68,7 @@ const GlobalSortEditor: React.FC<Props> = ({
 
   return (
     <div
-      className="w-[460px] bg-white border border-gray-200 rounded shadow-lg p-4 space-y-4"
+      className="w-[460px] bg-white border border-gray-200 rounded shadow-lg p-4 space-y-4 fixed z-[9999]"
       ref={ref}
     >
       {/* Header */}

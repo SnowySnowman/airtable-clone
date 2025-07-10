@@ -13,6 +13,23 @@ type FilterCondition = {
 
 type SortItem = { columnId: string; order: "asc" | "desc" };
 
+interface TopBarProps {
+  viewName: string;
+  columns: { id: string; name?: string; type: string }[];
+  visibility: Record<string, boolean>;
+  onToggleColumn: (columnId: string, visible: boolean) => void;
+  filters: FilterCondition[];
+  setFilters: React.Dispatch<React.SetStateAction<FilterCondition[]>>;
+  saveCurrentViewConfig: () => void;
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  addFakeRows: (params: { tableId: string; count: number }) => void;
+  tableId: string;
+  sort: SortItem[];
+  setSort: React.Dispatch<React.SetStateAction<SortItem[]>>;
+  onOpenSort: () => void;
+}
+
 export default function TopBar({
   viewName,
   columns,
@@ -25,19 +42,9 @@ export default function TopBar({
   setSearchQuery,
   addFakeRows,
   tableId,
-}: {
-  viewName: string;
-  columns: { id: string; name?: string; type: string }[]; // ✅ Ensure `type` is included
-  visibility: Record<string, boolean>;
-  onToggleColumn: (columnId: string, visible: boolean) => void;
-  filters: FilterCondition[];
-  setFilters: React.Dispatch<React.SetStateAction<FilterCondition[]>>;
-  saveCurrentViewConfig: () => void;
-  searchQuery: string;
-  setSearchQuery: (q: string) => void;
-  addFakeRows: (params: { tableId: string; count: number }) => void;
-  tableId: string;
-}) {
+  onOpenSort,
+  
+}: TopBarProps) {
   const [showColumnPopover, setShowColumnPopover] = useState(false);
   const buttonRef = useRef<HTMLDivElement>(null);
   const [showFilterPopover, setShowFilterPopover] = useState(false);
@@ -208,7 +215,8 @@ export default function TopBar({
         {/* Sort button with popover */}
         <div className="relative" ref={sortButtonRef}>
           <button
-            onClick={() => setShowSortPopover((prev) => !prev)}
+            // onClick={() => setShowSortPopover((prev) => !prev)}
+            onClick={onOpenSort} 
             className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -223,7 +231,10 @@ export default function TopBar({
                 columns={sortableColumns}
                 sort={sort}
                 setSort={setSort}
-                onClose={() => setShowSortPopover(false)}
+                onClose={() => {
+                  setShowSortPopover(false);
+                  saveCurrentViewConfig();
+                }}
               />
             </div>
           )}

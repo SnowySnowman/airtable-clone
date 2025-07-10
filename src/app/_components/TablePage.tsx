@@ -22,6 +22,7 @@ import { Dialog } from '@headlessui/react';
 import TopBar from '~/app/_components/TopBar';
 import isEqual from 'lodash.isequal';
 import { Menu } from '@headlessui/react';
+import GlobalSortEditor from './GlobalSortEditor';
 
 
 type TableRow = {
@@ -128,7 +129,8 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const columnPopoverRef = useRef<HTMLDivElement>(null);
 
   const [localEdits, setLocalEdits] = useState<Map<string, Map<string, string>>>(new Map());
-
+  
+  const [showSortEditor, setShowSortEditor] = useState(false);
   
   const [editingColumn, setEditingColumn] = useState<Column | null>(null);
 
@@ -433,9 +435,6 @@ useEffect(() => {
 
   return all;
 }, [data]);
-
-
-
   
   console.log("DEBUG flatRows:", flatRows);
 
@@ -532,51 +531,6 @@ useEffect(() => {
         </Menu>
       </div>
     ),
-    // cell: ({ row, column, getValue }) => {
-    //   const rowId = row.original.id;
-    //   const columnId = column.id;
-    //   const defaultValue = getValue() as string ?? "";
-    //   const [optimisticCols, setOptimisticCols] = useState<
-    //     { id: string; name: string; type: 'TEXT' | 'NUMBER' }[]
-    //   >([]);
-    //   const [editingValue, setEditingValue] = useState(() =>
-    //     getCellValue(rowId, columnId, defaultValue) ?? ""
-    //   );
-
-    //   useEffect(() => {
-    //     // keep local state in sync if backend updates
-    //     setEditingValue(getCellValue(rowId, columnId, defaultValue));
-    //   }, [defaultValue, rowId, columnId]);
-
-    //   return (
-    //     <input
-    //       className="w-full bg-transparent text-sm px-0 py-0 focus:outline-none focus:ring-0"
-    //       value={editingValue}
-    //       onChange={(e) => setEditingValue(e.target.value)} // ✅ fast local state only
-    //       onBlur={() => {
-    //         const trimmed = String(editingValue).trim();
-    //         if (trimmed !== defaultValue) {
-    //           // ✅ show new value immediately
-    //           setLocalEdits((prev) => {
-    //             const newMap = new Map(prev);
-    //             const rowMap = new Map(newMap.get(rowId) ?? []);
-    //             rowMap.set(columnId, trimmed);
-    //             newMap.set(rowId, rowMap);
-    //             return newMap;
-    //           });
-
-    //           // ✅ update server in background
-    //           updateCell.mutate({
-    //             tableId,
-    //             rowId,
-    //             columnId,
-    //             value: trimmed,
-    //           });
-    //         }
-    //       }}
-    //     />
-    //   );
-    // }
 
     cell: ({ row, column, getValue }) => {
       const rowId = row.original.id;
@@ -700,7 +654,22 @@ const tableInstance = useReactTable({
         setSearchQuery={setSearchQuery}
         addFakeRows={addFakeRows.mutate}
         tableId={tableId}
+        onOpenSort={() => setShowSortEditor(true)}
       />
+
+      {showSortEditor && (
+        <GlobalSortEditor
+          tableId={tableId}
+          viewName={selectedView?.name ?? ""}
+          columns={table?.columns ?? []}
+          sort={sort}
+          setSort={setSort}
+          onClose={() => {
+            setShowSortEditor(false);
+            saveCurrentViewConfig();   // ← push the new sort up in one atomic call
+          }}
+        />
+      )}
 
 
       <div className="flex flex-1 overflow-hidden">
