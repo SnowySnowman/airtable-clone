@@ -37,7 +37,7 @@ const GlobalSortPopover: React.FC<Props> = ({ tableId, viewName, columns, sort, 
         onClose={onClose}
       />
     );
-  }
+  } 
 
   // Column list (only shown when no sort exists)
   return (
