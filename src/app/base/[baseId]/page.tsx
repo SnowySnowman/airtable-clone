@@ -248,16 +248,16 @@ export default function BasePage() {
 
         {/* Airtable-style table tab bar */}
         <div className="m-0 p-0 border-b border-gray-300 bg-[#fefbee] px-4">
-          <div className="flex items-center h-10 space-x-1">
+          <div className="flex h-10 space-x-1">
             {tables.map((table) => {
               const isActive = table.id === currentTableId;
               return (
                 <div key={table.id} className="relative flex items-center">
                   <button
                     onClick={() => setActiveTableId(table.id)}
-                    className={`flex items-center px-3 py-1.5 rounded-t-md border text-sm font-medium ${
+                    className={`h-full flex items-center px-3 py-1.5 rounded-t-md rounded-b-none border text-sm font-medium cursor-pointer ${
                       isActive
-                        ? "bg-white text-black border-x border-t border-gray-300 -mb-px"
+                        ? "z-10 bg-white text-black border-x border-t border-gray-300 border-b-0 -mb-px"
                         : "bg-[#f5f5f5] text-gray-700 hover:bg-gray-200 border-transparent"
                     }`}
                   >

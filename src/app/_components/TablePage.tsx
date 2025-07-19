@@ -636,7 +636,7 @@ const tableInstance = useReactTable({
             <div className="mb-4 relative">
               <button
                 onClick={() => setIsViewTypeOpen(true)}
-                className="w-full flex items-center gap-2 px-2 py-1 text-sm text-gray-700 rounded border border-transparent hover:border-gray-300 hover:bg-gray-300 transition"
+                className="w-full flex items-center gap-2 px-2 py-1 text-sm text-gray-700 rounded border border-transparent hover:border-gray-300 hover:bg-gray-300 transition cursor-pointer"
               >
                 <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                   <use href="/icons/icon_definitions.svg#Plus" />
