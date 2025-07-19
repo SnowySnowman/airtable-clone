@@ -536,7 +536,7 @@ useEffect(() => {
 
       return (
         <input
-          className="w-full bg-transparent text-sm px-0 py-0 focus:outline-none focus:ring-0 cursor-pointer"
+          className="w-full bg-transparent text-sm px-0 py-0 focus:outline-none focus:ring-0"
           value={editingValue}
           onChange={(e) => setEditingValue(e.target.value)}
           onBlur={handleBlur}

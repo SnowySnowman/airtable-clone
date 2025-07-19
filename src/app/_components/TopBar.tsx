@@ -146,7 +146,7 @@ export default function TopBar({
                 addFakeRows({ tableId, count: 100000 }); // Now this works
               }
             }}
-            className="text-gray-800 px-3 py-1 rounded disabled:opacity-50 flex items-center gap-2 hover:bg-gray-100 px-2 py-1 rounded"
+            className="text-gray-800 px-3 py-1 rounded disabled:opacity-50 flex items-center gap-2 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer"
           >
             <svg className="w-4 h-4 text-gray" viewBox="0 0 24 24">
               <use href="/icons/icon_definitions.svg#Plus" />
@@ -159,7 +159,7 @@ export default function TopBar({
         <div className="relative" ref={buttonRef}>
           <button
             onClick={() => setShowColumnPopover((prev) => !prev)}
-            className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded"
+            className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <use href="/icons/icon_definitions.svg#EyeSlash" />
@@ -183,7 +183,7 @@ export default function TopBar({
         <div className="relative" ref={filterButtonRef}>
           <button
               onClick={() => setShowFilterPopover((prev) => !prev)}
-              className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded"
+              className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer"
           >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
               <use href="/icons/icon_definitions.svg#Filter" />
@@ -208,7 +208,7 @@ export default function TopBar({
           )}
         </div>
 
-        <button className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded">
+        <button className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer">
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <use href="/icons/icon_definitions.svg#Group" />
           </svg>
@@ -220,7 +220,7 @@ export default function TopBar({
           <button
             // onClick={() => setShowSortPopover((prev) => !prev)}
             onClick={onOpenSort} 
-            className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded"
+            className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <use href="/icons/icon_definitions.svg#SortAscending" />
@@ -261,18 +261,18 @@ export default function TopBar({
         </div>
 
 
-        <button className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded">
+        <button className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer">
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <use href="/icons/icon_definitions.svg#PaintBucket" />
           </svg>
           Color
         </button>
-        <button className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded">
+        <button className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer">
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <use href="/icons/icon_definitions.svg#RowHeightMedium" />
           </svg>
         </button>
-        <button className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded">
+        <button className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer">
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <use href="/icons/icon_definitions.svg#Share" />
           </svg>
@@ -281,12 +281,11 @@ export default function TopBar({
         <div className="relative" ref={searchRef}>
         <button
           onClick={() => setShowSearchInput((prev) => !prev)}
-          className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded"
+          className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer"
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <use href="/icons/icon_definitions.svg#Lookup" />
           </svg>
-          Search
         </button>
 
         {showSearchInput && (

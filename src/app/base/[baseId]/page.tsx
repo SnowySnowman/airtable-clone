@@ -337,7 +337,7 @@ export default function BasePage() {
                     );
                   }
                 }}
-                className="ml-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                className="ml-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer"
               >
                 + Add or import
               </button>
