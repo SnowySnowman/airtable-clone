@@ -129,14 +129,6 @@ export default function TablePage({ tableId }: { tableId: string }) {
 
 
   const updateCell = api.table.updateCell.useMutation();
-  // const addColumn = api.table.addColumn.useMutation({
-  //   onSuccess: async () => {
-  //     await refetchTable();        // refresh columns
-  //     await refetchRows();         // refresh data (row values)
-  //     setRowCache({});             // clear cache so rows match new columns
-  //     // await utils.table.getTableById.invalidate({ tableId });
-  //   },
-  // });
   const addColumnAndPopulate = api.table.addColumnAndPopulate.useMutation({
     onSuccess: async () => {
       await refetchTable(); // updates column structure
@@ -144,7 +136,6 @@ export default function TablePage({ tableId }: { tableId: string }) {
       setRowCache({}); // reset client cache
     },
   });
-
 
   const renameColumn = api.table.renameColumn.useMutation({
     onSuccess: async () => {
@@ -219,11 +210,6 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
     }
   });
 
-
-  // useEffect(() => {
-  //   void refetchRows(); // triggers fetch for [start, start + limit)
-  // }, [start, debouncedSearch, sort, filters]);
-
   const viewTypeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -275,28 +261,6 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
   }
 
 
-  
-
-  
-
-  // const {
-  //   data,
-  //   fetchNextPage,
-  //   hasNextPage,
-  //   isFetchingNextPage,
-  // } = api.table.getRows.useInfiniteQuery(
-  //   { tableId, 
-  //     limit: 100, 
-  //   search: isViewConfig(selectedView?.config) ? selectedView.config.search ?? debouncedSearch : debouncedSearch,
-  //   sort: isViewConfig(selectedView?.config) ? selectedView.config.sort ?? sort : sort,
-  //   filters: isViewConfig(selectedView?.config) ? selectedView.config.filters ?? filters : filters,
-  //   },
-  //   {
-  //     getNextPageParam: (lastPage) => lastPage.nextCursor,
-  //     refetchOnWindowFocus: false,
-  //     enabled: !!tableId,
-  //   }
-  // );
   const {
     data,
     fetchNextPage,
@@ -431,6 +395,10 @@ useEffect(() => {
   
   console.log("DEBUG flatRows:", flatRows);
 
+  
+  const lastVirtualRow = [...virtualRows].reverse().find((vr) => vr.index < flatRows.length);
+  const addRowY = lastVirtualRow ? lastVirtualRow.start + lastVirtualRow.size : totalHeight;
+
   const columns = useMemo<ColumnDef<TableRow>[]>(() => {
   if (!table) return [];
 
@@ -444,12 +412,12 @@ useEffect(() => {
           <span className="truncate">{col.name}</span>
         </div>
         <Menu as="div" className="relative inline-block text-left">
-          <Menu.Button className="flex items-center space-x-1 text-gray-500 hover:text-gray-700 text-sm">
+          <Menu.Button className="flex items-center space-x-1 text-gray-500 hover:text-gray-700 text-sm cursor-pointer">
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <use href="/icons/icon_definitions.svg#DotsThree" />
             </svg>
           </Menu.Button>
-          <Menu.Items className="absolute right-0 mt-2 w-32 origin-top-right bg-white border border-gray-200 divide-y divide-gray-100 rounded-md shadow-lg focus:outline-none z-50">
+          <Menu.Items className="absolute right-0 mt-2 w-32 origin-top-right bg-white border border-gray-200 divide-y divide-gray-100 rounded-md shadow-lg focus:outline-none z-50 cursor-pointer">
             <div className="py-1">
               <Menu.Item as="button">
                 {({ active }) => (
@@ -481,7 +449,7 @@ useEffect(() => {
                   <div className="flex justify-end gap-2">
                     <button
                       onClick={() => setEditingColumn(null)}
-                      className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded"
+                      className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -493,7 +461,7 @@ useEffect(() => {
                         });
                         setEditingColumn(null);
                       }}
-                      className="px-3 py-1 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded"
+                      className="px-3 py-1 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded cursor-pointer"
                     >
                       Save
                     </button>
@@ -510,7 +478,7 @@ useEffect(() => {
                     }}
                     className={`${
                       active ? 'bg-gray-100' : ''
-                    } w-full text-left px-4 py-2 text-sm text-red-600 flex items-center space-x-2`}
+                    } w-full text-left px-4 py-2 text-sm text-red-600 flex items-center space-x-2 cursor-pointer`}
                   >
                     <svg className="w-4 h-4" viewBox="0 0 24 24">
                       <use href="/icons/icon_definitions.svg#Trash" />
@@ -568,7 +536,7 @@ useEffect(() => {
 
       return (
         <input
-          className="w-full bg-transparent text-sm px-0 py-0 focus:outline-none focus:ring-0"
+          className="w-full bg-transparent text-sm px-0 py-0 focus:outline-none focus:ring-0 cursor-pointer"
           value={editingValue}
           onChange={(e) => setEditingValue(e.target.value)}
           onBlur={handleBlur}
@@ -606,15 +574,6 @@ const tableInstance = useReactTable({
     filterFn: 'includesString',
   },
 });
-
-
-  // useEffect(() => {
-  //   const last = virtualRows.at(-1);
-  //   if (!last) return;
-  //   if (last.index >= flatRows.length - 1 && hasNextPage && !isFetchingNextPage) {
-  //     fetchNextPage();
-  //   }
-  // }, [virtualRows, flatRows.length, hasNextPage, isFetchingNextPage, searchQuery]);
 
   useEffect(() => {
     const last = virtualRows.at(-1);
@@ -677,7 +636,7 @@ const tableInstance = useReactTable({
             <div className="mb-4 relative">
               <button
                 onClick={() => setIsViewTypeOpen(true)}
-                className="w-full flex items-center gap-2 px-2 py-1 text-sm text-gray-700 rounded hover:border hover:border-gray-300 hover:bg-gray-50 transition"
+                className="w-full flex items-center gap-2 px-2 py-1 text-sm text-gray-700 rounded border border-transparent hover:border-gray-300 hover:bg-gray-300 transition"
               >
                 <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                   <use href="/icons/icon_definitions.svg#Plus" />
@@ -693,7 +652,7 @@ const tableInstance = useReactTable({
                 <input
                   type="text"
                   placeholder="Find a view"
-                  className="w-full pl-8 pr-3 py-1.5 text-sm text-gray-800 rounded border border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none transition"
+                  className="w-full pl-8 pr-3 py-1.5 text-sm text-gray-800 rounded border border-transparent focus:outline-none transition cursor-text"
                   disabled // optional
                 />
               </div>
@@ -871,7 +830,7 @@ const tableInstance = useReactTable({
                                   defaultValue: "", // optional
                                 });
                               }}
-                              className="text-green-500 hover:bg-green-100 rounded-full px-2 py-1"
+                              className="text-green-500 hover:bg-green-100 rounded-full px-2 py-1 cursor-pointer"
                             >
                             <svg className="w-4 h-4 fill-current text-gray-400 hover:text-gray-600">
                               <use href="/icons/icon_definitions.svg#Plus" />
@@ -923,7 +882,7 @@ const tableInstance = useReactTable({
                                     display: 'flex',
                                     width: '100%',
                                   }}
-                                  className="relative z-0 flex transition-colors hover:bg-gray-100"
+                                  className="relative z-0 flex transition-colors hover:bg-gray-100 border-b border-gray-200"
                                 >
                               
                                 {/* Row numbers */}
@@ -951,7 +910,11 @@ const tableInstance = useReactTable({
                                   {row.getVisibleCells().map((cell) => (
                                     <div
                                       key={cell.id}
-                                      className="relative px-3 py-2 text-sm text-gray-800 bg-transparent focus-within:z-50 focus-within:outline focus-within:outline-2 focus-within:outline-blue-500 border-b border-r border-gray-200"
+                                      className={
+                                        `flex items-center px-3 py-2 text-sm text-gray-800 bg-transparent border-r border-gray-200 
+                                        ${virtualRow.index === flatRows.length - 1 ? '' : 'border-b'}`
+                                      }
+
                                       style={{
                                         width: '150px',
                                         minWidth: '150px',
@@ -970,12 +933,12 @@ const tableInstance = useReactTable({
                               key="add-row-button"
                               style={{
                                 position: 'absolute',
-                                transform: `translateY(${totalHeight}px)`,
+                                transform: `translateY(${addRowY}px)`,
                                 height: '47px', // match estimated row height
                                 display: 'flex',
                                 width: '100%',
                               }}
-                              className="hover:bg-gray-100 cursor-pointer"
+                              className="hover:bg-gray-100 cursor-pointer border-b border-r border-gray-200"
                               onClick={() => addRow.mutate({ tableId })}
                             >
                               {/* Row number cell with + icon */}
@@ -990,22 +953,6 @@ const tableInstance = useReactTable({
                               >
                                 +
                               </div>
-
-                              {/* Placeholder cells */}
-                              {tableInstance.getVisibleFlatColumns().map((col) => (
-                                <div
-                                  key={col.id}
-                                  className="px-3 py-2 text-sm text-gray-400 border-t border-gray-200"
-                                  style={{
-                                    width: '150px',
-                                    minWidth: '150px',
-                                    maxWidth: '150px',
-                                    boxSizing: 'border-box',
-                                  }}
-                                >
-                                  Add new row...
-                                </div>
-                              ))}
                             </div>
                           </div>
                         </td>
@@ -1023,7 +970,7 @@ const tableInstance = useReactTable({
             <h3 className="text-lg font-semibold mb-4">Choose view type</h3>
             <div className="space-y-2">
               <button
-                className="w-full text-left px-3 py-2 bg-blue-100 hover:bg-blue-200 rounded"
+                className="w-full text-left px-3 py-2 bg-blue-100 hover:bg-blue-200 rounded cursor-pointer"
                 onClick={() => {
                   setNewViewType('grid');
                   setIsViewTypeOpen(false);
@@ -1061,12 +1008,12 @@ const tableInstance = useReactTable({
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => setIsNameDialogOpen(false)}
-                  className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
+                  className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
                   onClick={() => {
                     if (!viewName.trim()) return alert('Enter a view name');
                     const hiddenColumns = Object.entries(columnVisibility)
@@ -1109,12 +1056,12 @@ const tableInstance = useReactTable({
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => setEditingColumn(null)}
-                  className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
+                  className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
                   onClick={() => {
                     if (editingColumn?.name?.trim()) {
                       renameColumn.mutate({
