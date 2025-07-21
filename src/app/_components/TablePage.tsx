@@ -493,62 +493,151 @@ useEffect(() => {
       </div>
     ),
 
-    cell: ({ row, column, getValue }) => {
-      const rowId = row.original.id;
-      const columnId = column.id;
-      const defaultValue = getValue() as string ?? "";
+    // cell: ({ row, column, getValue }) => {
+    //   const rowId = row.original.id;
+    //   const columnId = column.id;
+    //   const defaultValue = getValue() as string ?? "";
       
-      const [editingValue, setEditingValue] = useState(() =>
-        getCellValue(rowId, columnId, defaultValue)
-      );
+    //   const [editingValue, setEditingValue] = useState(() =>
+    //     getCellValue(rowId, columnId, defaultValue)
+    //   );
 
-      useEffect(() => {
-        // Keep in sync with backend updates or cache refetch
-        const latest = getCellValue(rowId, columnId, defaultValue);
-        setEditingValue(latest);
-      }, [defaultValue, rowId, columnId, localEdits]);
+    //   useEffect(() => {
+    //     // Keep in sync with backend updates or cache refetch
+    //     const latest = getCellValue(rowId, columnId, defaultValue);
+    //     setEditingValue(latest);
+    //   }, [defaultValue, rowId, columnId, localEdits]);
 
-      const handleBlur = () => {
-        let trimmed: string;
-        trimmed = String(editingValue ?? "").trim();
+    //   const handleBlur = () => {
+    //     let trimmed: string;
+    //     trimmed = String(editingValue ?? "").trim();
 
+    //     if (trimmed !== String(defaultValue).trim()) {
+    //       // Update local cache
+    //       setLocalEdits((prev) => {
+    //         const newMap = new Map(prev);
+    //         const rowMap = new Map(newMap.get(rowId) ?? []);
+    //         rowMap.set(columnId, trimmed);
+    //         newMap.set(rowId, rowMap);
+    //         return newMap;
+    //       });
+
+    //       // Update backend
+    //       updateCell.mutate({
+    //         tableId,
+    //         rowId,
+    //         columnId,
+    //         value: trimmed,
+    //       });
+
+    //       console.log('💡 onBlur triggered', { rowId, columnId, editingValue });
+    //     }
+    //   };
+
+    //   return (
+    //     <input
+    //       className="w-full bg-transparent text-sm px-0 py-0 focus:outline-none focus:ring-0"
+    //       value={editingValue}
+    //       onChange={(e) => setEditingValue(e.target.value)}
+    //       onBlur={handleBlur}
+    //       onKeyDown={(e) => {
+    //         if (e.key === 'Enter') {
+    //           e.preventDefault(); // prevent form submit or other side effects
+    //           handleBlur();
+    //         }
+    //       }}
+    //     />
+    //   );
+    // }
+
+
+    cell: ({ row, column, getValue }) => {
+      // 1️⃣ bail out if table isn't ready
+      if (!table) return null;
+
+      const cols     = table.columns;
+      const colCount = cols.length;
+
+      const rowId     = row.original.id;
+      const rowIndex  = row.index;
+      const columnId  = column.id;
+      const defaultValue = (getValue() as string) ?? "";
+      const columnIndex  = cols.findIndex(c => c.id === columnId);
+
+      const handleBlurAndSave = () => {
+        const trimmed = String(editingValue ?? "").trim();
         if (trimmed !== String(defaultValue).trim()) {
-          // Update local cache
-          setLocalEdits((prev) => {
-            const newMap = new Map(prev);
-            const rowMap = new Map(newMap.get(rowId) ?? []);
+          // update local cache
+          setLocalEdits(prev => {
+            const copy = new Map(prev);
+            const rowMap = new Map(copy.get(rowId) ?? []);
             rowMap.set(columnId, trimmed);
-            newMap.set(rowId, rowMap);
-            return newMap;
+            copy.set(rowId, rowMap);
+            return copy;
           });
-
-          // Update backend
-          updateCell.mutate({
-            tableId,
-            rowId,
-            columnId,
-            value: trimmed,
-          });
-
-          console.log('💡 onBlur triggered', { rowId, columnId, editingValue });
+          // send to server
+          updateCell.mutate({ tableId, rowId, columnId, value: trimmed });
         }
       };
 
+      const focusCell = (nextRow: number, nextColId: string) => {
+        // find the input in the DOM
+        const sel = `input[data-row-index="${nextRow}"][data-col-id="${nextColId}"]`;
+        const next = document.querySelector<HTMLInputElement>(sel);
+        if (next) {
+          next.focus();
+          next.select();
+          // if you're virtualized, you may need to scroll it into view:
+          next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      };
+
+      const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Tab' || e.key === 'Enter') {
+          e.preventDefault();
+          handleBlurAndSave();
+
+          if (e.key === 'Enter') {
+            focusCell(rowIndex + 1, columnId);
+          } else {
+            const dir = e.shiftKey ? -1 : 1;
+            let nextColIdx = columnIndex + dir;
+            let nextRow    = rowIndex;
+
+            if (nextColIdx < 0) {
+              nextRow    = rowIndex - 1;
+              nextColIdx = colCount - 1;
+            } else if (nextColIdx >= colCount) {
+              nextRow    = rowIndex + 1;
+              nextColIdx = 0;
+            }
+            const nextColId = cols[nextColIdx].id;
+            focusCell(nextRow, nextColId);
+          }
+        }
+      };
+
+      // standard editing state
+      const [editingValue, setEditingValue] = useState(() =>
+        getCellValue(rowId, columnId, defaultValue)
+      );
+      useEffect(() => {
+        setEditingValue(getCellValue(rowId, columnId, defaultValue));
+      }, [defaultValue, rowId, columnId, localEdits]);
+
       return (
         <input
-          className="w-full bg-transparent text-sm px-0 py-0 focus:outline-none focus:ring-0"
+          data-row-index={rowIndex}
+          data-col-id={columnId}
+          className="w-full bg-transparent text-sm focus:outline-none"
           value={editingValue}
-          onChange={(e) => setEditingValue(e.target.value)}
-          onBlur={handleBlur}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault(); // prevent form submit or other side effects
-              handleBlur();
-            }
-          }}
+          onChange={e => setEditingValue(e.target.value)}
+          onBlur={handleBlurAndSave}
+          onKeyDown={onKeyDown}
         />
       );
     }
+
 
 
 
