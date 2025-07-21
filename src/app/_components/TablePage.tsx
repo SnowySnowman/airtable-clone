@@ -611,7 +611,10 @@ useEffect(() => {
               nextRow    = rowIndex + 1;
               nextColIdx = 0;
             }
-            const nextColId = cols[nextColIdx].id;
+
+            const nextColumn = cols[nextColIdx];
+            if (!nextColumn) return;            // bail if somehow out‑of‑bounds
+            const nextColId = nextColumn.id;
             focusCell(nextRow, nextColId);
           }
         }
