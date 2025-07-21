@@ -146,7 +146,7 @@ export default function TopBar({
                 addFakeRows({ tableId, count: 100000 }); // Now this works
               }
             }}
-            className="text-gray-800 px-3 py-1 rounded disabled:opacity-50 flex items-center gap-2 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer"
+            className="text-gray-800 px-3 py-1 rounded disabled:opacity-50 flex items-center gap-2 hover:bg-gray-100 cursor-pointer"
           >
             <svg className="w-4 h-4 text-gray" viewBox="0 0 24 24">
               <use href="/icons/icon_definitions.svg#Plus" />
