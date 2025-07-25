@@ -23,7 +23,9 @@ import TopBar from '~/app/_components/TopBar';
 import isEqual from 'lodash.isequal';
 import { Menu } from '@headlessui/react';
 import GlobalSortEditor from './GlobalSortEditor';
-
+import AddFieldPopover from '~/app/_components/AddFieldPopover';
+import { Popover, Transition } from '@headlessui/react';
+import { Fragment } from 'react';
 
 type TableRow = {
   id: string;
@@ -50,6 +52,12 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const [debouncedFilters] = useDebounce(filters, 500);
   const [debouncedSort] = useDebounce(sort, 500);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
+
+  const [pendingFieldType, setPendingFieldType] = useState<
+    'TEXT' | 'NUMBER'
+    | null
+  >(null);
+  const [pendingFieldName, setPendingFieldName] = useState("");
 
   
   
@@ -907,7 +915,7 @@ const tableInstance = useReactTable({
                           ))}
 
                           {/* Add Column Button */}
-                          <th className="px-8 py-2 text-left text-xs tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200">
+                          {/* <th className="px-8 py-2 text-left text-xs tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200">
                             <button
                               onClick={() => {
                                 const name = prompt("Column name?");
@@ -922,13 +930,68 @@ const tableInstance = useReactTable({
                                   defaultValue: "", // optional
                                 });
                               }}
-                              className="text-green-500 hover:bg-green-100 rounded-full px-2 py-1 cursor-pointer"
+                              className="rounded-full px-2 py-1 cursor-pointer"
                             >
                             <svg className="w-4 h-4 fill-current text-gray-400 hover:text-gray-600">
                               <use href="/icons/icon_definitions.svg#Plus" />
                             </svg>
                             </button>
+                          </th> */}
+
+                          <th className="px-8 py-2 text-left text-xs tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200">
+                            <Popover className="relative">
+                              {({ open }) => (
+                                <>
+                                  {/* Popover.Button toggles open/close automatically */}
+                                  <Popover.Button
+                                    className={`rounded-full px-2 py-1 cursor-pointer ${
+                                      open ? 'text-gray-500' : ''
+                                    }`}
+                                  >
+                                    <svg className="w-4 h-4 fill-current text-gray-400 hover:text-gray-600">
+                                      <use href="/icons/icon_definitions.svg#Plus" />
+                                    </svg>
+                                  </Popover.Button>
+
+                                  {/* No more `static` prop here — this panel will mount/unmount on open */}
+                                  <Transition
+                                    as="div"
+                                    show={open}
+                                    enter="transition ease-out duration-200"
+                                    enterFrom="opacity-0 translate-y-1"
+                                    enterTo="opacity-100 translate-y-0"
+                                    leave="transition ease-in duration-150"
+                                    leaveFrom="opacity-100 translate-y-0"
+                                    leaveTo="opacity-0 translate-y-1"
+                                  >
+                                    {open && (
+                                      <Popover.Panel className="absolute top-full left-0 mt-2 w-72 bg-white border border-gray-200 rounded shadow-lg z-50 p-2">
+                                        {/* <AddFieldPopover
+                                          onAddField={(type) => {
+                                            addColumnAndPopulate.mutate({
+                                              tableId,
+                                              name: type
+                                                .toLowerCase()
+                                                .split('_')
+                                                .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+                                                .join(' '),
+                                              type: type as 'TEXT' | 'NUMBER',
+                                              defaultValue: '',
+                                            });
+                                          }}
+                                        /> */}
+                                        <AddFieldPopover onAddField={type => {
+                                          setPendingFieldType(type);
+                                          setPendingFieldName("");   // reset input
+                                        }}/>
+                                      </Popover.Panel>
+                                    )}
+                                  </Transition>
+                                </>
+                              )}
+                            </Popover>
                           </th>
+
 
                         </tr>
                       ))}
@@ -1035,7 +1098,7 @@ const tableInstance = useReactTable({
                             >
                               {/* Row number cell with + icon */}
                               <div
-                                className="flex items-center justify-center text-blue-500 font-bold border-t border-gray-200"
+                                className="flex items-center justify-center text-gray-400 font-bold border-t border-gray-400 hover:text-gray-500"
                                 style={{
                                   width: '48px',
                                   minWidth: '48px',
@@ -1172,6 +1235,71 @@ const tableInstance = useReactTable({
             </div>
           </div>
         </Dialog>
+
+        <Dialog
+          open={!!pendingFieldType}
+          onClose={() => setPendingFieldType(null)}
+          className="relative z-50"
+        >
+          {/* semi‑transparent backdrop */}
+          <div className="fixed inset-0 bg-black/30" aria-hidden />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
+              <Dialog.Title className="text-lg font-medium">
+                {`Add ${
+                  pendingFieldType === 'TEXT' ? 'Single line text' :
+                  pendingFieldType === 'NUMBER' ? 'Number' :
+                  /* etc… */
+                  pendingFieldType
+                } field`}
+              </Dialog.Title>
+
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700">
+                  Field name
+                </label>
+                <input
+                  type="text"
+                  value={pendingFieldName}
+                  onChange={e => setPendingFieldName(e.target.value)}
+                  className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="mt-6 flex justify-end space-x-2">
+                <button
+                  onClick={() => setPendingFieldType(null)}
+                  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (!pendingFieldName.trim()) {
+                      alert("Please enter a field name");
+                      return;
+                    }
+                    if (!pendingFieldType) {
+                      return;
+                    }
+                    addColumnAndPopulate.mutate({
+                      tableId,
+                      name: pendingFieldName.trim(),
+                      type: pendingFieldType,
+                      defaultValue: "",
+                    });
+                    // close everything
+                    setPendingFieldType(null);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Add field
+                </button>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
+
 
 
       </div>
