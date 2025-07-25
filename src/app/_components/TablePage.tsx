@@ -104,13 +104,6 @@ export default function TablePage({ tableId }: { tableId: string }) {
 
   
   const parentRef = useRef<HTMLDivElement>(null);
-  // const virtualizer = useVirtualizer({
-  //   count: rowCount,
-  //   getScrollElement: () => parentRef.current,
-  //   estimateSize: () => 47,
-  //   measureElement: (el) => el.getBoundingClientRect().height,
-  //   overscan: 10,
-  // });
 
   
   const virtualizer = useVirtualizer({
@@ -288,13 +281,6 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
     }
   );
 
-
-
-  // useEffect(() => {
-  //   if (!data) return;
-  //   setRowCount(data.rows.length + (data.nextCursor ? 1 : 0));
-  // }, [data]);
-
   useEffect(() => {
   if (!data?.pages?.length) return;
 
@@ -362,23 +348,6 @@ useEffect(() => {
     return rowMap?.get(columnId) ?? defaultValue;
   }
 
-
-  // const flatRows = useMemo<TableRow[]>(() => {
-  //   return (
-  //     data?.rows.map((row) => ({
-  //       id: row.id,
-  //       ...(typeof row.values === "object" && row.values !== null
-  //         ? row.values as Record<string, string | number>
-  //         : {})
-  //     })) ?? []
-  //   );
-  // }, [data, searchQuery]);
-
-  // const flatRows = useMemo<TableRow[]>(() => {
-  //   return Array.from({ length: rowCount }, (_, i) =>
-  //     rowCache[i] ?? { id: `placeholder-${i}` }
-  //   );
-  // }, [rowCache, rowCount]);
 
   const flatRows = useMemo<TableRow[]>(() => {
     const all = data?.pages.flatMap((page) =>
@@ -500,63 +469,6 @@ useEffect(() => {
         </Menu>
       </div>
     ),
-
-    // cell: ({ row, column, getValue }) => {
-    //   const rowId = row.original.id;
-    //   const columnId = column.id;
-    //   const defaultValue = getValue() as string ?? "";
-      
-    //   const [editingValue, setEditingValue] = useState(() =>
-    //     getCellValue(rowId, columnId, defaultValue)
-    //   );
-
-    //   useEffect(() => {
-    //     // Keep in sync with backend updates or cache refetch
-    //     const latest = getCellValue(rowId, columnId, defaultValue);
-    //     setEditingValue(latest);
-    //   }, [defaultValue, rowId, columnId, localEdits]);
-
-    //   const handleBlur = () => {
-    //     let trimmed: string;
-    //     trimmed = String(editingValue ?? "").trim();
-
-    //     if (trimmed !== String(defaultValue).trim()) {
-    //       // Update local cache
-    //       setLocalEdits((prev) => {
-    //         const newMap = new Map(prev);
-    //         const rowMap = new Map(newMap.get(rowId) ?? []);
-    //         rowMap.set(columnId, trimmed);
-    //         newMap.set(rowId, rowMap);
-    //         return newMap;
-    //       });
-
-    //       // Update backend
-    //       updateCell.mutate({
-    //         tableId,
-    //         rowId,
-    //         columnId,
-    //         value: trimmed,
-    //       });
-
-    //       console.log('💡 onBlur triggered', { rowId, columnId, editingValue });
-    //     }
-    //   };
-
-    //   return (
-    //     <input
-    //       className="w-full bg-transparent text-sm px-0 py-0 focus:outline-none focus:ring-0"
-    //       value={editingValue}
-    //       onChange={(e) => setEditingValue(e.target.value)}
-    //       onBlur={handleBlur}
-    //       onKeyDown={(e) => {
-    //         if (e.key === 'Enter') {
-    //           e.preventDefault(); // prevent form submit or other side effects
-    //           handleBlur();
-    //         }
-    //       }}
-    //     />
-    //   );
-    // }
 
 
     cell: ({ row, column, getValue }) => {
@@ -914,30 +826,6 @@ const tableInstance = useReactTable({
                             </th>
                           ))}
 
-                          {/* Add Column Button */}
-                          {/* <th className="px-8 py-2 text-left text-xs tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200">
-                            <button
-                              onClick={() => {
-                                const name = prompt("Column name?");
-                                if (!name) return;
-                                const type = prompt("Type (text/number)?", "text");
-                                if (!["TEXT", "NUMBER"].includes(type ?? "")) return alert("Invalid type");
-
-                                addColumnAndPopulate.mutate({
-                                  tableId,
-                                  name,
-                                  type: type as "TEXT" | "NUMBER",
-                                  defaultValue: "", // optional
-                                });
-                              }}
-                              className="rounded-full px-2 py-1 cursor-pointer"
-                            >
-                            <svg className="w-4 h-4 fill-current text-gray-400 hover:text-gray-600">
-                              <use href="/icons/icon_definitions.svg#Plus" />
-                            </svg>
-                            </button>
-                          </th> */}
-
                           <th className="px-8 py-2 text-left text-xs tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200">
                             <Popover className="relative">
                               {({ open }) => (
@@ -966,20 +854,6 @@ const tableInstance = useReactTable({
                                   >
                                     {open && (
                                       <Popover.Panel className="absolute top-full left-0 mt-2 w-72 bg-white border border-gray-200 rounded shadow-lg z-50 p-2">
-                                        {/* <AddFieldPopover
-                                          onAddField={(type) => {
-                                            addColumnAndPopulate.mutate({
-                                              tableId,
-                                              name: type
-                                                .toLowerCase()
-                                                .split('_')
-                                                .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-                                                .join(' '),
-                                              type: type as 'TEXT' | 'NUMBER',
-                                              defaultValue: '',
-                                            });
-                                          }}
-                                        /> */}
                                         <AddFieldPopover onAddField={type => {
                                           setPendingFieldType(type);
                                           setPendingFieldName("");   // reset input
@@ -1118,7 +992,6 @@ const tableInstance = useReactTable({
               </div>
         </div>
       </div>
-
 
         {isViewTypeOpen && (
           <div className="absolute top-12 left-full ml-2 w-64 bg-white shadow-xl border rounded z-50 p-4">
