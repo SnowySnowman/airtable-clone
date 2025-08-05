@@ -1122,7 +1122,6 @@ const tableInstance = useReactTable({
                 {`Add ${
                   pendingFieldType === 'TEXT' ? 'Single line text' :
                   pendingFieldType === 'NUMBER' ? 'Number' :
-                  /* etc… */
                   pendingFieldType
                 } field`}
               </Dialog.Title>
