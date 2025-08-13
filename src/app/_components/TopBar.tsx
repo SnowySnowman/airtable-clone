@@ -55,6 +55,7 @@ export default function TopBar({
   const [sort, setSort] = useState<SortItem[]>([]);
   const [showSearchInput, setShowSearchInput] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  const closeSearch = () => setShowSearchInput(false);
 
   // When user clicks "Sort" button:
   const handleOpenSort = () => {
@@ -289,16 +290,45 @@ export default function TopBar({
         </button>
 
         {showSearchInput && (
-          <div className="absolute top-10 right-0 bg-white border border-gray-300 rounded p-2 w-64 z-50">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Find in view"
-              className="w-full px-2 py-1 bg-white outline-none focus:outline-none focus:ring-0 border-none"
-            />
+          <div className="absolute top-10 right-0 w-64 z-50">
+            <div className="bg-white border border-gray-300 rounded shadow overflow-hidden">
+              {/* header / input */}
+              <div className="relative p-2">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Find in view"
+                  className="w-full px-2 py-1 pr-8 bg-white outline-none focus:ring-0 border-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSearchInput(false)}
+                  aria-label="Close"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-1"
+                >
+                  {/* X icon */}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* shaded footer */}
+              <div className="bg-gray-100 border-t border-gray-200 px-3 py-3 text-sm">
+                <p className="text-gray-700 leading-snug">
+                  Use advanced search options in the
+                </p>
+                <a href="#" className="text-blue-600 hover:underline">
+                  search extension
+                </a>
+              </div>
+            </div>
           </div>
         )}
+
       </div>
 
       </div>

@@ -24,6 +24,7 @@ import isEqual from 'lodash.isequal';
 import { Menu } from '@headlessui/react';
 import GlobalSortEditor from './GlobalSortEditor';
 import AddFieldPopover from '~/app/_components/AddFieldPopover';
+import AddFieldConfigurePanel from '~/app/_components/AddFieldConfigurePanel';
 import { Popover, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 
@@ -43,6 +44,16 @@ function isViewConfig(config: unknown): config is ViewConfig {
   return typeof config === 'object' && config !== null && 'filters' in config;
 }
 
+type FieldType = 'TEXT' | 'NUMBER';
+
+function nextAutoName(type: FieldType, existingLower: Set<string>) {
+  const base = type === 'NUMBER' ? 'number' : 'label';
+  let i = 1;
+  while (existingLower.has(`${base}${i}`)) i++;
+  return `${base}${i}`;
+}
+
+
 export default function TablePage({ tableId }: { tableId: string }) {
   const [rowCount, setRowCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
@@ -59,8 +70,6 @@ export default function TablePage({ tableId }: { tableId: string }) {
   >(null);
   const [pendingFieldName, setPendingFieldName] = useState("");
 
-  
-  
   const { data: views } = api.table.getViews.useQuery({ tableId });
   const [selectedView, setSelectedView] = useState<TableView | null>(null);
 
@@ -130,6 +139,7 @@ export default function TablePage({ tableId }: { tableId: string }) {
 
 
   const updateCell = api.table.updateCell.useMutation();
+  const [addFieldStep, setAddFieldStep] = useState<null | 'choose' | 'configure'>(null);
   const addColumnAndPopulate = api.table.addColumnAndPopulate.useMutation({
     onSuccess: async () => {
       await refetchTable(); // updates column structure
@@ -396,7 +406,7 @@ useEffect(() => {
           </Menu.Button>
           <Menu.Items className="absolute right-0 mt-2 w-32 origin-top-right bg-white border border-gray-200 divide-y divide-gray-100 rounded-md shadow-lg focus:outline-none z-50 cursor-pointer">
             <div className="py-1">
-              <Menu.Item as="button">
+              <Menu.Item>
                 {({ active }) => (
                   <button
                     onClick={() => setEditingColumn(col)}
@@ -769,7 +779,7 @@ const tableInstance = useReactTable({
               
 
               <div
-                className="flex-1 overflow-auto pt-0 pl-0"
+                className="flex-1 overflow-auto pt-0 pl-0 bg-gray-100"
                 ref={parentRef}
               >
 
@@ -778,7 +788,7 @@ const tableInstance = useReactTable({
                   style={{ height: totalHeight, position: 'relative' }}
                   className="pt-0 pl-0"
                 >
-                  <table className="table-fixed border-separate border-spacing-0 border-gray-200">
+                  <table className="table-fixed border-separate border-spacing-0 border-gray-200 bg-white">
                     <colgroup>
                       {/* Row number column (narrow) */}
                       <col
@@ -828,22 +838,24 @@ const tableInstance = useReactTable({
 
                           <th className="px-8 py-2 text-left text-xs tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200">
                             <Popover className="relative">
-                              {({ open }) => (
+                              {({ open, close }) => (
                                 <>
-                                  {/* Popover.Button toggles open/close automatically */}
                                   <Popover.Button
-                                    className={`rounded-full px-2 py-1 cursor-pointer ${
-                                      open ? 'text-gray-500' : ''
-                                    }`}
+                                    className={`rounded-full px-2 py-1 cursor-pointer ${open ? 'text-gray-500' : ''}`}
+                                    onClick={() => {
+                                      // always start at step 1 when opening
+                                      setAddFieldStep('choose');
+                                      setPendingFieldType(null);
+                                      setPendingFieldName('');
+                                    }}
                                   >
                                     <svg className="w-4 h-4 fill-current text-gray-400 hover:text-gray-600">
                                       <use href="/icons/icon_definitions.svg#Plus" />
                                     </svg>
                                   </Popover.Button>
 
-                                  {/* No more `static` prop here — this panel will mount/unmount on open */}
                                   <Transition
-                                    as="div"
+                                    as={Fragment}
                                     show={open}
                                     enter="transition ease-out duration-200"
                                     enterFrom="opacity-0 translate-y-1"
@@ -852,19 +864,108 @@ const tableInstance = useReactTable({
                                     leaveFrom="opacity-100 translate-y-0"
                                     leaveTo="opacity-0 translate-y-1"
                                   >
-                                    {open && (
-                                      <Popover.Panel className="absolute top-full left-0 mt-2 w-72 bg-white border border-gray-200 rounded shadow-lg z-50 p-2">
-                                        <AddFieldPopover onAddField={type => {
-                                          setPendingFieldType(type);
-                                          setPendingFieldName("");   // reset input
-                                        }}/>
-                                      </Popover.Panel>
-                                    )}
+                                    {/* IMPORTANT: no `{open && ...}` here, and as="div" to ensure a DOM node */}
+                                    <Popover.Panel as="div" className="absolute top-full left-0 mt-2 z-50">
+                                      {/* animated container size change between steps */}
+                                      <div
+                                        className={`transition-all duration-200 ease-out ${
+                                          addFieldStep === 'choose' ? 'w-80' : 'w-[420px]'
+                                        }`}
+                                      >
+                                        {/* Step 1: chooser */}
+                                        <Transition
+                                          as="div" // ensure a real element
+                                          show={addFieldStep === 'choose'}
+                                          enter="transition ease-out duration-150"
+                                          enterFrom="opacity-0 scale-95 -translate-y-1"
+                                          enterTo="opacity-100 scale-100 translate-y-0"
+                                          leave="transition ease-in duration-150"
+                                          leaveFrom="opacity-100 scale-100 translate-y-0"
+                                          leaveTo="opacity-0 scale-95 -translate-y-1"
+                                        >
+                                          <div className="bg-white border border-gray-200 rounded shadow overflow-hidden">
+                                            <AddFieldPopover
+                                              onAddField={(type) => {
+                                                // go to step 2, prefill chosen type
+                                                setPendingFieldType(type);
+                                                setPendingFieldName('');
+                                                setAddFieldStep('configure');
+                                              }}
+                                            />
+                                          </div>
+                                        </Transition>
+
+                                        {/* Step 2: configure (smaller) */}
+                                        <Transition
+                                          as="div" // ensure a real element
+                                          show={addFieldStep === 'configure'}
+                                          enter="transition ease-out duration-150"
+                                          enterFrom="opacity-0 scale-95 -translate-y-1"
+                                          enterTo="opacity-100 scale-100 translate-y-0"
+                                          leave="transition ease-in duration-150"
+                                          leaveFrom="opacity-100 scale-100 translate-y-0"
+                                          leaveTo="opacity-0 scale-95 -translate-y-1"
+                                        >
+                                          {/* Do not wrap in `{pendingFieldType && ...}` — keep the element stable */}
+                                          <AddFieldConfigurePanel
+                                            type={pendingFieldType ?? 'TEXT'} // safe default; you set it before showing
+                                            name={pendingFieldName}
+                                            setName={setPendingFieldName}
+                                            onChangeType={(t) => setPendingFieldType(t)}
+                                            onCancel={() => {
+                                              // Close first so the leave animation runs with a real node,
+                                              // then reset state on the next tick.
+                                              close();
+                                              requestAnimationFrame(() => {
+                                                setAddFieldStep(null);
+                                                setPendingFieldType(null);
+                                                setPendingFieldName('');
+                                              });
+                                            }}
+                                            onCreate={() => {
+                                              const t: FieldType = (pendingFieldType ?? 'TEXT');
+
+                                              // Collect existing column names (lowercased) so we can avoid collisions.
+                                              // Use whatever you already have in scope for columns:
+                                              // - if you have `table.columns`, use that
+                                              // - otherwise adapt to your actual source of truth
+                                              const existingNamesLower = new Set(
+                                                (table?.columns ?? columns ?? []).map((c: any) =>
+                                                  String(c.name ?? c.title ?? c.id).toLowerCase()
+                                                )
+                                              );
+
+                                              // If user left it blank, auto-name it.
+                                              const userName = (pendingFieldName || '').trim();
+                                              const finalName = userName || nextAutoName(t, existingNamesLower);
+
+                                              addColumnAndPopulate.mutate({
+                                                tableId,
+                                                name: finalName,
+                                                type: t,
+                                                defaultValue: '',
+                                              });
+
+                                              // Close first so Transition has a real node during leave, then reset.
+                                              close();
+                                              requestAnimationFrame(() => {
+                                                setAddFieldStep(null);
+                                                setPendingFieldType(null);
+                                                setPendingFieldName('');
+                                              });
+                                            }}
+
+                                          />
+                                        </Transition>
+                                      </div>
+                                    </Popover.Panel>
                                   </Transition>
                                 </>
                               )}
                             </Popover>
+
                           </th>
+
 
 
                         </tr>
@@ -1109,68 +1210,7 @@ const tableInstance = useReactTable({
           </div>
         </Dialog>
 
-        <Dialog
-          open={!!pendingFieldType}
-          onClose={() => setPendingFieldType(null)}
-          className="relative z-50"
-        >
-          {/* semi‑transparent backdrop */}
-          <div className="fixed inset-0 bg-black/30" aria-hidden />
-          <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
-              <Dialog.Title className="text-lg font-medium">
-                {`Add ${
-                  pendingFieldType === 'TEXT' ? 'Single line text' :
-                  pendingFieldType === 'NUMBER' ? 'Number' :
-                  pendingFieldType
-                } field`}
-              </Dialog.Title>
-
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700">
-                  Field name
-                </label>
-                <input
-                  type="text"
-                  value={pendingFieldName}
-                  onChange={e => setPendingFieldName(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="mt-6 flex justify-end space-x-2">
-                <button
-                  onClick={() => setPendingFieldType(null)}
-                  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    if (!pendingFieldName.trim()) {
-                      alert("Please enter a field name");
-                      return;
-                    }
-                    if (!pendingFieldType) {
-                      return;
-                    }
-                    addColumnAndPopulate.mutate({
-                      tableId,
-                      name: pendingFieldName.trim(),
-                      type: pendingFieldType,
-                      defaultValue: "",
-                    });
-                    // close everything
-                    setPendingFieldType(null);
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  Add field
-                </button>
-              </div>
-            </Dialog.Panel>
-          </div>
-        </Dialog>
+        
 
 
 

@@ -347,7 +347,7 @@ export default function BasePage() {
 
 
         {/* Render selected table in full */}
-        {currentTableId ? <TablePage tableId={currentTableId} /> : <p className="text-gray-500">No table selected</p>}
+        {currentTableId ? <TablePage tableId={currentTableId} /> : <p className="text-gray-500 pl-5 pt-5">No table selected :(</p>}
 
       </div>
 
