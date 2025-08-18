@@ -816,19 +816,17 @@ const tableInstance = useReactTable({
                         <tr key={group.id}>
                           {/* STEP 2: Add row number header */}
                           <th
-                            className="px-2 py-2 text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 w-12"
+                            className="sticky left-0 z-30 px-2 py-2 text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 w-12"
                             style={{ height: '40px' }}
                           >
                             #
                           </th>
 
-                          {group.headers.map((header) => (
+                          {group.headers.map((header, idx) => (
                             <th
                               key={header.id}
-                              className="px-3 py-2 text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200"
-                              style={{
-                                height: '40px',
-                              }}
+                              className={`px-3 py-2 text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 ${idx === 0 ? 'sticky left-[48px] z-20' : ''}`}
+                              style={{ height: '40px' }}
                             >
                               <div className="flex justify-between items-center">
                                 {flexRender(header.column.columnDef.header, header.getContext())}
@@ -1012,12 +1010,12 @@ const tableInstance = useReactTable({
                                     display: 'flex',
                                     width: '100%',
                                   }}
-                                  className="relative z-0 flex transition-colors hover:bg-gray-100 border-b border-gray-200"
+                                  className="group relative z-0 flex transition-colors hover:bg-gray-100 border-b border-gray-200"
                                 >
                               
                                 {/* Row numbers */}
                                 <div
-                                  className="flex items-center justify-center bg-transparent border-r border-gray-200"
+                                  className="sticky left-0 z-10 flex items-center justify-center bg-white group-hover:bg-gray-100 border-r border-gray-200"
                                   style={{
                                     width: '48px',
                                     minWidth: '48px',
@@ -1037,11 +1035,12 @@ const tableInstance = useReactTable({
                                 </div>
 
 
-                                  {row.getVisibleCells().map((cell) => (
+                                  {row.getVisibleCells().map((cell, i) => (
                                     <div
                                       key={cell.id}
                                       className={
                                         `flex items-center px-3 py-2 text-sm text-gray-800 bg-transparent border-r border-gray-200 
+                                        ${i === 0 ? 'sticky left-[48px] z-10 bg-white group-hover:bg-gray-100' : ''} 
                                         ${virtualRow.index === flatRows.length - 1 ? '' : 'border-b'}`
                                       }
 
@@ -1068,12 +1067,12 @@ const tableInstance = useReactTable({
                                 display: 'flex',
                                 width: '100%',
                               }}
-                              className="hover:bg-gray-100 cursor-pointer border-b border-r border-gray-200"
+                              className="group hover:bg-gray-100 cursor-pointer border-b border-r border-gray-200"
                               onClick={() => addRow.mutate({ tableId })}
                             >
                               {/* Row number cell with + icon */}
                               <div
-                                className="flex items-center justify-center text-gray-400 font-bold border-t border-gray-400 hover:text-gray-500"
+                                className="sticky left-0 z-10 flex items-center justify-center text-gray-400 font-bold border-t border-gray-400 hover:text-gray-500"
                                 style={{
                                   width: '48px',
                                   minWidth: '48px',
