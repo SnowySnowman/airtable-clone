@@ -40,6 +40,7 @@ type FilterCondition = {
   value: string | number | null;
 };
 
+
 function isViewConfig(config: unknown): config is ViewConfig {
   return typeof config === 'object' && config !== null && 'filters' in config;
 }
@@ -72,6 +73,18 @@ export default function TablePage({ tableId }: { tableId: string }) {
 
   const { data: views } = api.table.getViews.useQuery({ tableId });
   const [selectedView, setSelectedView] = useState<TableView | null>(null);
+  // optimistic "new row" placeholders so UI updates instantly
+  const [optimisticRows, setOptimisticRows] = useState<TableRow[]>([]);
+  // Columns being optimistically removed from the UI while the backend deletes them
+  const [pendingDeleteCols, setPendingDeleteCols] = useState<Set<string>>(new Set());
+
+
+  function makeBlankOptimisticRow(): TableRow {
+    const vals: Record<string, string | number> = {};
+    for (const c of (table?.columns ?? [])) vals[c.id] = '';
+    const tmpId = `__optimistic__${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    return { id: tmpId, ...vals };
+  }
 
   useEffect(() => {
     if (!selectedView && Array.isArray(views) && views.length > 0) {
@@ -108,9 +121,6 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const [newViewType, setNewViewType] = useState<'grid' | null>(null);
 
   const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
-
-
-
   
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -132,10 +142,77 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const columnPopoverRef = useRef<HTMLDivElement>(null);
 
   const [localEdits, setLocalEdits] = useState<Map<string, Map<string, string>>>(new Map());
+  // Cells currently saving in the background (purely for UI; doesn't block typing)
+  const [pendingCells, setPendingCells] = useState<Set<string>>(new Set());
+
+  function saveCell(rowId: string, columnId: string, value: string) {
+    const key = `${rowId}__${columnId}`;
+
+    // Optimistic overlay: user sees value immediately
+    setLocalEdits(prev => {
+      const copy = new Map(prev);
+      const rowMap = new Map(copy.get(rowId) ?? []);
+      rowMap.set(columnId, value);
+      copy.set(rowId, rowMap);
+      return copy;
+    });
+
+    // Background save (non-blocking, allows parallel edits)
+    setPendingCells(prev => new Set(prev).add(key));
+    updateCell.mutate(
+      { tableId, rowId, columnId, value },
+      {
+        onSettled: () => {
+          // remove "pending" dot
+          setPendingCells(prev => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
+        },
+        onError: (err) => {
+          // Optional: roll back overlay or mark error
+          console.error('Save failed', err);
+          // Example rollback (comment out if you prefer to keep the optimistic value):
+          // setLocalEdits(prev => {
+          //   const copy = new Map(prev);
+          //   const rowMap = new Map(copy.get(rowId) ?? []);
+          //   rowMap.delete(columnId);
+          //   if (rowMap.size) copy.set(rowId, rowMap); else copy.delete(rowId);
+          //   return copy;
+          // });
+          alert('Failed to save cell. The value you typed is still visible.');
+        },
+      }
+    );
+  }
+
   
   const [showSortEditor, setShowSortEditor] = useState(false);
   
   const [editingColumn, setEditingColumn] = useState<Column | null>(null);
+  // Airtable-style column editor
+  const [editName, setEditName] = useState('');
+  const [editAnchor, setEditAnchor] = useState<DOMRect | null>(null);
+
+
+  type UICol =
+    | (Column & { isOptimistic?: false })
+    | { id: string; name: string; type: FieldType; isOptimistic: true };
+
+  const [optimisticCols, setOptimisticCols] = useState<UICol[]>([]);
+  const [optimisticColNames, setOptimisticColNames] = useState<Record<string, string>>({});
+
+
+  // Server cols + optimistic placeholders shown immediately
+  const uiColumns = useMemo<UICol[]>(
+    () => {
+      const base = (table?.columns ?? []).filter(c => !pendingDeleteCols.has(c.id));
+      return [...base, ...optimisticCols];
+    },
+    [table, optimisticCols, pendingDeleteCols]
+  );
+
 
 
   const updateCell = api.table.updateCell.useMutation();
@@ -292,13 +369,16 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
   );
 
   useEffect(() => {
-  if (!data?.pages?.length) return;
+  if (!data?.pages?.length) {
+    setRowCount(optimisticRows.length + 1);
+    return;
+  }
 
   // Get all fetched rows from all pages
   const allRows = data.pages.flatMap((page) => page.rows);
 
   // Estimate row count (optional: make more precise if your backend returns total count separately)
-  setRowCount(allRows.length + 1);
+  setRowCount(allRows.length + optimisticRows.length + 1);
 
   // Cache each row by its index (assumes order is consistent and stable)
   setRowCache((prev) => {
@@ -313,17 +393,26 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
     });
     return updated;
   });
-}, [data]);
+}, [data, optimisticRows]);
 
 
-useEffect(() => {
-  const listener = (e: FocusEvent) => {
-    console.log('🧠 blur:', e.target);
-  };
-  window.addEventListener('blur', listener, true);
-  return () => window.removeEventListener('blur', listener, true);
-}, []);
+  useEffect(() => {
+    const listener = (e: FocusEvent) => {
+      console.log('🧠 blur:', e.target);
+    };
+    window.addEventListener('blur', listener, true);
+    return () => window.removeEventListener('blur', listener, true);
+  }, []);
 
+  useEffect(() => {
+    setColumnVisibility(prev => {
+      const next = { ...prev };
+      for (const c of uiColumns) {
+        if (next[c.id] === undefined) next[c.id] = true;
+      }
+      return next;
+    });
+  }, [uiColumns]);
 
 
   
@@ -377,8 +466,8 @@ useEffect(() => {
         seen.add(row.id);
       }
 
-  return all;
-}, [data]);
+  return [...all, ...optimisticRows];
+}, [data, optimisticRows]);
   
   console.log("DEBUG flatRows:", flatRows);
 
@@ -389,94 +478,143 @@ useEffect(() => {
   const columns = useMemo<ColumnDef<TableRow>[]>(() => {
   if (!table) return [];
 
-  return table.columns.map((col, index) => ({
+  const optimisticIdSet = new Set(optimisticCols.map(c => c.id));
+  const colsForDefs = uiColumns; // use merged columns
+
+  return colsForDefs.map((col: UICol, index: number) => ({
     accessorKey: col.id ?? `col-${index}`, // fallback ID
     size: 240,
     
     header: () => (
       <div className="flex items-center justify-between w-full px-2 py-1 hover:bg-gray-100 rounded">
         <div className="flex items-center space-x-1 text-sm font-medium text-gray-700">
-          <span className="truncate">{col.name}</span>
+          <span className="truncate">
+            {('isOptimistic' in col && col.isOptimistic)
+              ? `${col.name} (creating…)`
+              : (optimisticColNames[col.id] ?? col.name)}
+          </span>
+
         </div>
-        <Menu as="div" className="relative inline-block text-left">
-          <Menu.Button className="flex items-center space-x-1 text-gray-500 hover:text-gray-700 text-sm cursor-pointer">
-            <svg className="w-4 h-4" viewBox="0 0 24 24">
-              <use href="/icons/icon_definitions.svg#DotsThree" />
-            </svg>
-          </Menu.Button>
-          <Menu.Items className="absolute right-0 mt-2 w-32 origin-top-right bg-white border border-gray-200 divide-y divide-gray-100 rounded-md shadow-lg focus:outline-none z-50 cursor-pointer">
-            <div className="py-1">
-              <Menu.Item>
-                {({ active }) => (
-                  <button
-                    onClick={() => setEditingColumn(col)}
-                    className={`${
-                      active ? 'bg-gray-100' : ''
-                    } w-full text-left px-4 py-2 text-sm text-gray-700 flex items-center space-x-2`}
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24">
-                      <use href="/icons/icon_definitions.svg#Pencil" />
-                    </svg>
-                    <span>Edit</span>
-                  </button>
-                )}
-              </Menu.Item>
 
-              {editingColumn?.id === col.id && (
-                <div className="absolute right-36 top-0 mt-2 w-64 bg-white border border-gray-200 rounded shadow-lg p-4 z-50">
-                  <label className="block mb-2 text-sm font-medium text-gray-700">Rename column</label>
-                  <input
-                    type="text"
-                    value={editingColumn.name}
-                    onChange={(e) =>
-                      setEditingColumn({ ...editingColumn, name: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded mb-2"
-                  />
-                  <div className="flex justify-end gap-2">
+        {('isOptimistic' in col && col.isOptimistic) ? (
+          <span className="text-xs italic text-gray-400">New field…</span>
+        ) : (
+
+          <Menu as="div" className="relative inline-block text-left">
+            <Menu.Button className="flex items-center space-x-1 text-gray-500 hover:text-gray-700 text-sm cursor-pointer">
+              <svg className="w-4 h-4" viewBox="0 0 24 24">
+                <use href="/icons/icon_definitions.svg#DotsThree" />
+              </svg>
+            </Menu.Button>
+            <Menu.Items 
+              className={`absolute ${index === 0 ? 'left-0' : 'right-0'} mt-1 w-56 origin-top-right overflow-hidden
+                rounded-xl border border-gray-200 bg-white
+                shadow-[0_12px_32px_rgba(16,24,40,0.12)] ring-1 ring-black/5
+                focus:outline-none z-[999]`}>
+              {/* caret */}
+              <span
+                aria-hidden
+                className={`absolute -top-1.5 ${index === 0 ? 'left-3' : 'right-3'} h-3 w-3 rotate-45
+                  bg-white border-l border-t border-gray-200`}
+              />
+              <div className="py-1">
+                <Menu.Item>
+                  {({ active }) => (
                     <button
-                      onClick={() => setEditingColumn(null)}
-                      className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => {
-                        renameColumn.mutate({
-                          columnId: editingColumn.id,
-                          name: editingColumn.name.trim(),
-                        });
-                        setEditingColumn(null);
+                      onClick={(e) => {
+                        setEditingColumn(col);
+                        setEditName(col.name ?? '');
+                        const th = (e.currentTarget as HTMLElement).closest('th') as HTMLElement | null;
+                        const rect = th?.getBoundingClientRect();
+                        if (rect) setEditAnchor(rect);
                       }}
-                      className="px-3 py-1 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded cursor-pointer"
+
+                      className={`group w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium
+                        ${active ? 'bg-gray-50' : 'bg-white'} text-gray-800`}
                     >
-                      Save
+                      <svg className="w-4 h-4 shrink-0 opacity-70 group-hover:opacity-100" viewBox="0 0 24 24">
+                        <use href="/icons/icon_definitions.svg#Pencil" />
+                      </svg>
+                      <span className="truncate">Edit</span>
                     </button>
-                  </div>
-                </div>
-              )}
+                  )}
+                </Menu.Item>
 
+                <Menu.Item>
+                  {({ active }) => {
+                    const isFirstCol = index === 0; // disable delete for the first column
+                    const isOpt = 'isOptimistic' in col && col.isOptimistic;
 
-              <Menu.Item>
-                {({ active }) => (
-                  <button
-                    onClick={() => {
-                      if (confirm("Delete this column?")) deleteColumn.mutate({ columnId: col.id });
-                    }}
-                    className={`${
-                      active ? 'bg-gray-100' : ''
-                    } w-full text-left px-4 py-2 text-sm text-red-600 flex items-center space-x-2 cursor-pointer`}
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24">
-                      <use href="/icons/icon_definitions.svg#Trash" />
-                    </svg>
-                    <span>Delete</span>
-                  </button>
-                )}
-              </Menu.Item>
-            </div>
-          </Menu.Items>
-        </Menu>
+                    return (
+                      <button
+                        disabled={isFirstCol}
+                        onClick={() => {
+                          if (isFirstCol) return;
+
+                          // If it's an optimistic column placeholder, just remove it locally.
+                          if (isOpt) {
+                            setOptimisticCols(prev => prev.filter(c => (c as any).id !== (col as any).id));
+                            return;
+                          }
+
+                          // 1) Optimistically hide the column from the UI
+                          setPendingDeleteCols(prev => {
+                            const next = new Set(prev);
+                            next.add(col.id);
+                            return next;
+                          });
+                          // (optional) also hide in visibility map so any other UI respects it
+                          setColumnVisibility(prev => ({ ...prev, [col.id]: false }));
+
+                          // 2) Fire backend delete
+                          deleteColumn.mutate(
+                            { columnId: col.id },
+                            {
+                              onSuccess: async () => {
+                                // Data will refetch; clear the pending flag so new server state shows
+                                setPendingDeleteCols(prev => {
+                                  const next = new Set(prev);
+                                  next.delete(col.id);
+                                  return next;
+                                });
+                                await refetchTable();
+                                await utils.table.getRows.invalidate({ tableId });
+                                setRowCache({});
+                              },
+                              onError: (err) => {
+                                // Roll back optimistic removal
+                                setPendingDeleteCols(prev => {
+                                  const next = new Set(prev);
+                                  next.delete(col.id);
+                                  return next;
+                                });
+                                setColumnVisibility(prev => ({ ...prev, [col.id]: true }));
+                                alert('Failed to delete column: ' + err.message);
+                              },
+                            }
+                          );
+                        }}
+                        className={`group w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium
+                          ${active ? 'bg-gray-50' : 'bg-white'}
+                          ${isFirstCol ? 'text-gray-400 cursor-not-allowed' : 'text-red-600 hover:text-red-700'}`}
+                        title={isFirstCol ? 'Cannot delete the first column' : undefined}
+                      >
+                        <svg
+                          className={`w-4 h-4 shrink-0 ${isFirstCol ? 'opacity-40' : 'opacity-80 group-hover:opacity-100'}`}
+                          viewBox="0 0 24 24"
+                        >
+                          <use href="/icons/icon_definitions.svg#Trash" />
+                        </svg>
+                        <span className="truncate">Delete</span>
+                      </button>
+                    );
+                  }}
+                </Menu.Item>
+
+              </div>
+            </Menu.Items>
+          </Menu>
+        )}
       </div>
     ),
 
@@ -486,41 +624,68 @@ useEffect(() => {
       if (!table) return null;
 
       const cols     = table.columns;
-      const colCount = cols.length;
+      const visibleCols = tableInstance.getVisibleLeafColumns();
+      const colCount = visibleCols.length;
+      const columnIndex = visibleCols.findIndex(c => c.id === column.id);
 
       const rowId     = row.original.id;
       const rowIndex  = row.index;
       const columnId  = column.id;
       const defaultValue = (getValue() as string) ?? "";
-      const columnIndex  = cols.findIndex(c => c.id === columnId);
+      const isOptimistic = String(rowId).startsWith('__optimistic__');
+
+      const rowOverlay = localEdits.get(rowId);
+      const overlayValue = rowOverlay?.get(columnId); // ← only this cell
+      const displayValue = String(overlayValue ?? defaultValue);
+
+
+
+      // const handleBlurAndSave = () => {
+      //   const trimmed = String(editingValue ?? "").trim();
+      //   if (trimmed !== String(defaultValue).trim()) {
+      //     // update local cache
+      //     setLocalEdits(prev => {
+      //       const copy = new Map(prev);
+      //       const rowMap = new Map(copy.get(rowId) ?? []);
+      //       rowMap.set(columnId, trimmed);
+      //       copy.set(rowId, rowMap);
+      //       return copy;
+      //     });
+      //     // send to server
+      //     updateCell.mutate({ tableId, rowId, columnId, value: trimmed });
+      //   }
+      // };
 
       const handleBlurAndSave = () => {
-        const trimmed = String(editingValue ?? "").trim();
+        const trimmed = editingValue.trim();
         if (trimmed !== String(defaultValue).trim()) {
-          // update local cache
-          setLocalEdits(prev => {
-            const copy = new Map(prev);
-            const rowMap = new Map(copy.get(rowId) ?? []);
-            rowMap.set(columnId, trimmed);
-            copy.set(rowId, rowMap);
-            return copy;
-          });
-          // send to server
-          updateCell.mutate({ tableId, rowId, columnId, value: trimmed });
+          saveCell(rowId, columnId, trimmed); // non-blocking, optimistic
         }
       };
 
+
       const focusCell = (nextRow: number, nextColId: string) => {
-        // find the input in the DOM
-        const sel = `input[data-row-index="${nextRow}"][data-col-id="${nextColId}"]`;
-        const next = document.querySelector<HTMLInputElement>(sel);
-        if (next) {
-          next.focus();
-          next.select();
-          // if you're virtualized, you may need to scroll it into view:
-          next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-        }
+        const tryFocus = () => {
+          const sel = `input[data-row-index="${nextRow}"][data-col-id="${nextColId}"]`;
+          const el = document.querySelector<HTMLInputElement>(sel);
+          if (el) {
+            el.focus();
+            el.select();
+            return true;
+          }
+          return false;
+        };
+
+        // If it is already mounted, focus now
+        if (tryFocus()) return;
+
+        // Ensure it renders in the virtual window, then retry
+        virtualizer.scrollToIndex(nextRow, { align: 'auto' });
+        requestAnimationFrame(() => {
+          if (!tryFocus()) setTimeout(tryFocus, 50);
+        });
       };
+
 
       const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Tab' || e.key === 'Enter') {
@@ -528,38 +693,49 @@ useEffect(() => {
           handleBlurAndSave();
 
           if (e.key === 'Enter') {
+            // same column, next row
             focusCell(rowIndex + 1, columnId);
-          } else {
-            const dir = e.shiftKey ? -1 : 1;
-            let nextColIdx = columnIndex + dir;
-            let nextRow    = rowIndex;
-
-            if (nextColIdx < 0) {
-              nextRow    = rowIndex - 1;
-              nextColIdx = colCount - 1;
-            } else if (nextColIdx >= colCount) {
-              nextRow    = rowIndex + 1;
-              nextColIdx = 0;
-            }
-
-            const nextColumn = cols[nextColIdx];
-            if (!nextColumn) return;            // bail if somehow out‑of‑bounds
-            const nextColId = nextColumn.id;
-            focusCell(nextRow, nextColId);
+            return;
           }
+
+          const dir = e.shiftKey ? -1 : 1;
+          let nextColIdx = columnIndex + dir;
+          let nextRow    = rowIndex;
+
+          if (nextColIdx < 0) {
+            nextRow    = rowIndex - 1;
+            nextColIdx = colCount - 1;
+          } else if (nextColIdx >= colCount) {
+            nextRow    = rowIndex + 1;
+            nextColIdx = 0;
+          }
+
+          const nextColumn = visibleCols[nextColIdx];
+          if (!nextColumn) return;
+          focusCell(nextRow, nextColumn.id);
         }
       };
 
+
       // standard editing state
-      const [editingValue, setEditingValue] = useState(() =>
-        getCellValue(rowId, columnId, defaultValue)
-      );
+      const [editingValue, setEditingValue] = useState(displayValue);
+
+      // Re-sync only when this cell's source value changes
       useEffect(() => {
-        setEditingValue(getCellValue(rowId, columnId, defaultValue));
-      }, [defaultValue, rowId, columnId, localEdits]);
+        setEditingValue(displayValue);
+      }, [displayValue, rowId, columnId]);
+
+      // const [editingValue, setEditingValue] = useState(() =>
+      //   getCellValue(rowId, columnId, defaultValue)
+      // );
+      // useEffect(() => {
+      //   setEditingValue(getCellValue(rowId, columnId, defaultValue));
+      // }, [defaultValue, rowId, columnId, localEdits]);
 
       return (
         <input
+          disabled={isOptimistic}
+          placeholder={isOptimistic ? 'Creating…' : undefined}
           data-row-index={rowIndex}
           data-col-id={columnId}
           className="w-full bg-transparent text-sm focus:outline-none"
@@ -570,13 +746,34 @@ useEffect(() => {
         />
       );
     }
-
-
-
-
   }));
-}, [table, tableId, updateCell]);
+}, [table, uiColumns, optimisticColNames, updateCell, pendingDeleteCols]);
 
+
+
+
+function handleAddRow() {
+  // 1) show a blank row immediately
+  const temp = makeBlankOptimisticRow();
+  setOptimisticRows(prev => [...prev, temp]);
+
+  // 2) fire the mutation; when the server responds, swap temp for real
+  addRow.mutate(
+    { tableId },
+    {
+      onSuccess: async () => {
+        // remove one optimistic placeholder and refetch real data
+        setOptimisticRows(prev => prev.slice(1));
+        await utils.table.getRows.invalidate({ tableId });
+      },
+      onError: (err) => {
+        // roll back optimistic row
+        setOptimisticRows(prev => prev.slice(1));
+        alert('Failed to add row: ' + err.message);
+      },
+    }
+  );
+}
 
 
 
@@ -618,7 +815,7 @@ const tableInstance = useReactTable({
       {/* ✅ Top row - full width */}
       <TopBar
         viewName={selectedView?.name ?? "Grid view"}
-        columns={table.columns}
+        columns={uiColumns.map((c: any) => ({ ...c, name: optimisticColNames[c.id] ?? c.name })) as any}
         visibility={columnVisibility}
         filters={filters}
         setFilters={setFilters}
@@ -814,9 +1011,9 @@ const tableInstance = useReactTable({
                     <thead className="sticky top-0 z-20 bg-white">
                       {tableInstance.getHeaderGroups().map((group) => (
                         <tr key={group.id}>
-                          {/* STEP 2: Add row number header */}
+                          {/* Add row number header */}
                           <th
-                            className="sticky left-0 z-30 px-2 py-2 text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 w-12"
+                            className="sticky left-0 z-30 bg-gray-50 relative"
                             style={{ height: '40px' }}
                           >
                             #
@@ -824,8 +1021,13 @@ const tableInstance = useReactTable({
 
                           {group.headers.map((header, idx) => (
                             <th
-                              key={header.id}
-                              className={`px-3 py-2 text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 ${idx === 0 ? 'sticky left-[48px] z-20' : ''}`}
+                              key={`${group.id}-${header.id}`}
+                              className={`px-3 py-2 text-left text-xs tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 ${idx === 0 ? `
+                                sticky left-[48px] z-20 relative overflow-visible
+                                after:content-[''] after:absolute after:top-0 after:left-[100%] after:ml-[-1px] after:h-full after:w-8
+                                after:bg-gradient-to-r after:from-gray-300/50 after:to-transparent
+                                after:pointer-events-none
+                              ` : ''}`}
                               style={{ height: '40px' }}
                             >
                               <div className="flex justify-between items-center">
@@ -834,7 +1036,9 @@ const tableInstance = useReactTable({
                             </th>
                           ))}
 
-                          <th className="px-8 py-2 text-left text-xs tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200">
+                          <th 
+                          key={`add-field-${group.id}`}
+                          className="px-8 py-2 text-left text-xs tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200">
                             <Popover className="relative">
                               {({ open, close }) => (
                                 <>
@@ -923,28 +1127,45 @@ const tableInstance = useReactTable({
                                             onCreate={() => {
                                               const t: FieldType = (pendingFieldType ?? 'TEXT');
 
-                                              // Collect existing column names (lowercased) so we can avoid collisions.
-                                              // Use whatever you already have in scope for columns:
-                                              // - if you have `table.columns`, use that
-                                              // - otherwise adapt to your actual source of truth
+                                              // avoid name collision with both server + optimistic columns
                                               const existingNamesLower = new Set(
-                                                (table?.columns ?? columns ?? []).map((c: any) =>
+                                                (uiColumns ?? []).map((c: any) =>
                                                   String(c.name ?? c.title ?? c.id).toLowerCase()
                                                 )
                                               );
-
-                                              // If user left it blank, auto-name it.
                                               const userName = (pendingFieldName || '').trim();
                                               const finalName = userName || nextAutoName(t, existingNamesLower);
 
-                                              addColumnAndPopulate.mutate({
-                                                tableId,
-                                                name: finalName,
-                                                type: t,
-                                                defaultValue: '',
-                                              });
+                                              // 1) add optimistic column immediately
+                                              const tempColId = `__colopt__${Date.now()}_${Math.random().toString(36).slice(2)}`;
+                                              setOptimisticCols(prev => [
+                                                ...prev,
+                                                { id: tempColId, name: finalName, type: t, isOptimistic: true },
+                                              ]);
+                                              setColumnVisibility(prev => ({ ...prev, [tempColId]: true }));
 
-                                              // Close first so Transition has a real node during leave, then reset.
+                                              // 2) fire mutation; on success, remove placeholder and refresh real data
+                                              addColumnAndPopulate.mutate(
+                                                {
+                                                  tableId,
+                                                  name: finalName,
+                                                  type: t,
+                                                  defaultValue: '',
+                                                },
+                                                {
+                                                  onSuccess: async () => {
+                                                    setOptimisticCols(prev => prev.filter(c => c.id !== tempColId));
+                                                    await refetchTable();
+                                                    await utils.table.getRows.invalidate({ tableId });
+                                                  },
+                                                  onError: (err) => {
+                                                    setOptimisticCols(prev => prev.filter(c => c.id !== tempColId));
+                                                    alert('Failed to add column: ' + err.message);
+                                                  },
+                                                }
+                                              );
+
+                                              // Close the popover and reset local UI state
                                               close();
                                               requestAnimationFrame(() => {
                                                 setAddFieldStep(null);
@@ -952,6 +1173,7 @@ const tableInstance = useReactTable({
                                                 setPendingFieldName('');
                                               });
                                             }}
+
 
                                           />
                                         </Transition>
@@ -1000,7 +1222,7 @@ const tableInstance = useReactTable({
 
                               return (
                                 <div
-                                  key={`${row.id}-${virtualRow.index}`}
+                                  key={row.id}
                                   ref={virtualizer.measureElement}
                                   data-index={virtualRow.index}
                                   style={{
@@ -1015,7 +1237,7 @@ const tableInstance = useReactTable({
                               
                                 {/* Row numbers */}
                                 <div
-                                  className="sticky left-0 z-10 flex items-center justify-center bg-white group-hover:bg-gray-100 border-r border-gray-200"
+                                  className="sticky left-0 z-10 bg-white group-hover:bg-gray-100 relative"
                                   style={{
                                     width: '48px',
                                     minWidth: '48px',
@@ -1038,22 +1260,22 @@ const tableInstance = useReactTable({
                                   {row.getVisibleCells().map((cell, i) => (
                                     <div
                                       key={cell.id}
-                                      className={
-                                        `flex items-center px-3 py-2 text-sm text-gray-800 bg-transparent border-r border-gray-200 
-                                        ${i === 0 ? 'sticky left-[48px] z-10 bg-white group-hover:bg-gray-100' : ''} 
-                                        ${virtualRow.index === flatRows.length - 1 ? '' : 'border-b'}`
-                                      }
-
-                                      style={{
-                                        width: '150px',
-                                        minWidth: '150px',
-                                        maxWidth: '150px',
-                                        boxSizing: 'border-box',
-                                      }}
+                                      className={`
+                                        flex items-center px-3 py-2 text-sm text-gray-800 bg-transparent border-r border-gray-200
+                                        ${i === 0 ? `
+                                          sticky left-[48px] z-10 bg-white group-hover:bg-gray-100 relative overflow-visible
+                                          after:content-[''] after:absolute after:top-0 after:left-[100%] after:ml-[-1px] after:h-full after:w-8
+                                          after:bg-gradient-to-r after:from-gray-300/50 after:to-transparent
+                                          after:pointer-events-none
+                                        ` : ''}
+                                        ${virtualRow.index === flatRows.length - 1 ? '' : 'border-b'}
+                                      `}
+                                      style={{ width: '150px', minWidth: '150px', maxWidth: '150px', boxSizing: 'border-box' }}
                                     >
                                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                     </div>
                                   ))}
+
                                 </div>
                               );
                             })}
@@ -1068,11 +1290,11 @@ const tableInstance = useReactTable({
                                 width: '100%',
                               }}
                               className="group hover:bg-gray-100 cursor-pointer border-b border-r border-gray-200"
-                              onClick={() => addRow.mutate({ tableId })}
+                              onClick={handleAddRow}
                             >
                               {/* Row number cell with + icon */}
                               <div
-                                className="sticky left-0 z-10 flex items-center justify-center text-gray-400 font-bold border-t border-gray-400 hover:text-gray-500"
+                                className="sticky left-0 z-10 flex items-center justify-center text-gray-400 font-bold border-t border-gray-400 hover:text-gray-500 bg-white group-hover:bg-gray-100"
                                 style={{
                                   width: '48px',
                                   minWidth: '48px',
@@ -1165,7 +1387,7 @@ const tableInstance = useReactTable({
           </div>
         </Dialog>
 
-        <Dialog open={!!editingColumn} onClose={() => setEditingColumn(null)} className="relative z-50">
+        {/* <Dialog open={!!editingColumn} onClose={() => setEditingColumn(null)} className="relative z-50">
           <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
           <div className="fixed inset-0 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded shadow-xl w-96">
@@ -1207,13 +1429,141 @@ const tableInstance = useReactTable({
               </div>
             </div>
           </div>
-        </Dialog>
+        </Dialog> */}
 
         
 
 
 
       </div>
+
+      {/* Global column editor (single instance) */}
+      {editingColumn && editAnchor && createPortal(
+        <>
+          {/* light click-away backdrop */}
+          <div
+            className="fixed inset-0 z-[199] bg-transparent"
+            onClick={() => { setEditingColumn(null); setEditAnchor(null); }}
+          />
+          {/* anchored card */}
+          <div
+            className="fixed z-[1000]"
+            style={{
+              // directly below the header, small gap
+              top: Math.min(
+                editAnchor.bottom + 8,
+                (typeof window !== 'undefined' ? window.innerHeight - 320 : editAnchor.bottom + 8)
+              ),
+              // align left edges with the header th
+              left: Math.max(
+                8,
+                Math.min(
+                  editAnchor.left,
+                  (typeof window !== 'undefined' ? window.innerWidth - 428 : editAnchor.left)
+                )
+              ),
+            }}
+          >
+            <div className="w-[420px] rounded-xl border border-gray-200 bg-white shadow-[0_12px_32px_rgba(16,24,40,0.16)] ring-1 ring-black/5">
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="flex items-start gap-2 text-sm text-gray-600">
+                  <svg className="mt-0.5 h-4 w-4 text-gray-400" viewBox="0 0 24 24">
+                    <use href="/icons/icon_definitions.svg#Lock" />
+                  </svg>
+                  <p>
+                    This is the table’s <span className="font-medium">primary field</span>. The name is meant to be a short, unique representation of each record.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                  <button disabled className="w-full inline-flex items-center justify-between rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-500 cursor-not-allowed">
+                    <span className="inline-flex items-center gap-2">
+                      <svg className="h-4 w-4 opacity-70" viewBox="0 0 24 24">
+                        <use href="/icons/icon_definitions.svg#TextAa" />
+                      </svg>
+                      Single line text
+                    </span>
+                    <svg className="h-4 w-4 opacity-70" viewBox="0 0 24 24">
+                      <use href="/icons/icon_definitions.svg#CaretDown" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200">
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 cursor-not-allowed"
+                >
+                  <svg className="h-4 w-4 opacity-80" viewBox="0 0 24 24">
+                    <use href="/icons/icon_definitions.svg#Plus" />
+                  </svg>
+                  Add description
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setEditingColumn(null); setEditAnchor(null); setEditName(''); }}
+                    className="px-3 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      const trimmed = editName.trim();
+                      if (!trimmed || !editingColumn) return alert('Column name cannot be empty.');
+
+                      // 1) optimistic UI name
+                      setOptimisticColNames(prev => ({ ...prev, [editingColumn.id]: trimmed }));
+
+                      // 2) close the editor immediately
+                      const id = editingColumn.id;
+                      setEditingColumn(null);
+                      setEditAnchor(null);
+
+                      // 3) fire backend rename
+                      renameColumn.mutate(
+                        { columnId: id, name: trimmed },
+                        {
+                          onSuccess: async () => {
+                            await refetchTable();
+                            await utils.table.getRows.invalidate({ tableId });
+                            // clear optimistic overlay (server now has the name)
+                            setOptimisticColNames(prev => { const m = { ...prev }; delete m[id]; return m; });
+                          },
+                          onError: (err) => {
+                            // roll back optimistic overlay
+                            setOptimisticColNames(prev => { const m = { ...prev }; delete m[id]; return m; });
+                            alert('Failed to rename column: ' + err.message);
+                          },
+                        }
+                      );
+                    }}
+                    className="px-4 py-2 rounded-md text-sm text-white bg-blue-600 hover:bg-blue-700 cursor-pointer"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+
       
     </div>
   );
