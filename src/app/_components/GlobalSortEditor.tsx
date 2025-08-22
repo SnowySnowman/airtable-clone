@@ -9,6 +9,7 @@ interface Props {
   columns: { id: string; name: string; type: "TEXT" | "NUMBER" }[];
   sort: SortItem[];
   setSort: React.Dispatch<React.SetStateAction<SortItem[]>>;
+  onApply?: (next: SortItem[]) => void;  // used to send final result
   onClose?: () => void;
 }
 
@@ -17,10 +18,42 @@ const GlobalSortEditor: React.FC<Props> = ({
   viewName,
   columns, 
   sort, 
-  setSort, 
+  setSort,
+  onApply,
   onClose 
 }) => {
   const ref = useRef<HTMLDivElement>(null);
+
+  // Local draft that mirrors the incoming sort until Apply
+  const [draft, setDraft] = React.useState<SortItem[]>(sort);
+  React.useEffect(() => setDraft(sort), [sort]);
+
+  // auto-apply draft → parent sort (debounced)
+  React.useEffect(() => {
+    const h = setTimeout(() => {
+      // only apply valid items (have columnId + order)
+      const valid = draft.filter(d => d.columnId && d.order);
+      // let “no rules” mean “no sorting”
+      setSort(valid);
+    }, 150); // 150–250ms feels snappy; tune if you like
+    return () => clearTimeout(h);
+  }, [draft, setSort]);
+
+  const updateItem = (i: number, u: Partial<SortItem>) =>
+    setDraft(prev => prev.map((it, idx) => (idx === i ? { ...it, ...u } : it)));
+
+  const removeItem = (i: number) =>
+    setDraft(prev => prev.filter((_, idx) => idx !== i));
+
+  const addSort = () =>
+    setDraft(prev => [...prev, { columnId: columns[0]!.id, order: 'asc' }]);
+
+  // Call this when user confirms (Apply/Done) or when you want to finish editing
+  const applyAndClose = () => {
+    onApply?.(draft);
+    onClose?.();
+  };
+
 
   // 2) click‐outside to close
   useEffect(() => {
@@ -32,39 +65,23 @@ const GlobalSortEditor: React.FC<Props> = ({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
-  
-  // 3) initialise at least one row
-  useEffect(() => {
-    if (sort.length === 0 && columns.length > 0) {
-      setSort([{ columnId: columns[0]!.id, order: "asc" }]);
-    }
-  }, [columns, setSort, sort.length]);
-
-
-  const updateItem = (index: number, update: Partial<SortItem>) => {
-    setSort((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, ...update } : item))
-    );
-  };
-
-  const removeItem = (index: number) => {
-    setSort((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const addSort = () => {
-    console.log("columns:", columns);
-    if (columns.length === 0) return;
-    setSort((prev) => [
-      ...prev,
-      { columnId: columns[0]!.id, order: "asc" },
-    ]);
-  };
 
   const getColumnType = (columnId: string) => {
     return columns.find((col) => col.id === columnId)?.type ?? "TEXT";
   };
 
   console.log("Rendering sort editor with sort items:", sort);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        applyAndClose(); // or onClose?.() if you prefer Cancel-on-click-away
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [applyAndClose]);
+
 
   return (
     <div
@@ -76,56 +93,40 @@ const GlobalSortEditor: React.FC<Props> = ({
       <div className="border-t border-gray-200 -mt-2" />
 
       {/* Sort rows */}
-      {sort.map((item, index) => {
-        const col = columns.find((c) => c.id === item.columnId);
-        const type = getColumnType(item.columnId);
+      {draft.map((item, index) => (
+        <div key={index} className="flex items-center gap-2">
+          <select
+            value={item.columnId}
+            onChange={(e) => updateItem(index, { columnId: e.target.value })}
+            className="text-sm border rounded px-2 py-1 w-40"
+          >
+            {columns.map((col) => <option key={col.id} value={col.id}>{col.name}</option>)}
+          </select>
 
-        return (
-          <div key={index} className="flex items-center gap-2">
-            {/* Field dropdown */}
-            <select
-              value={item.columnId}
-              onChange={(e) => updateItem(index, { columnId: e.target.value })}
-              className="text-sm border rounded px-2 py-1 w-40"
-            >
-              {columns.map((col) => (
-                <option key={col.id} value={col.id}>
-                  {col.name}
-                </option>
-              ))}
-            </select>
+          <select
+            value={item.order}
+            onChange={(e) => updateItem(index, { order: e.target.value as "asc" | "desc" })}
+            className="text-sm border rounded px-2 py-1 w-36"
+          >
+            {getColumnType(item.columnId) === "TEXT" ? (
+              <>
+                <option value="asc">A → Z</option>
+                <option value="desc">Z → A</option>
+              </>
+            ) : (
+              <>
+                <option value="asc">1 → 9</option>
+                <option value="desc">9 → 1</option>
+              </>
+            )}
+          </select>
 
-            {/* Sort order */}
-            <select
-              value={item.order}
-              onChange={(e) =>
-                updateItem(index, { order: e.target.value as "asc" | "desc" })
-              }
-              className="text-sm border rounded px-2 py-1 w-36"
-            >
-              {type === "TEXT" ? (
-                <>
-                  <option value="asc">A → Z</option>
-                  <option value="desc">Z → A</option>
-                </>
-              ) : (
-                <>
-                  <option value="asc">1 → 9</option>
-                  <option value="desc">9 → 1</option>
-                </>
-              )}
-            </select>
+          <button onClick={() => removeItem(index)} className="text-gray-500 hover:text-red-500">
+            <Trash2 size={16} />
+          </button>
+        </div>
+      ))}
 
-            {/* Remove button */}
-            <button
-              onClick={() => removeItem(index)}
-              className="text-gray-500 hover:text-red-500"
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        );
-      })}
 
       {/* Add sort */}
       <div className="pt-2">

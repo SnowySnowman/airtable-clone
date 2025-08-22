@@ -19,14 +19,8 @@ export default function BasePage() {
 
   const [isCreatingTable, setIsCreatingTable] = useState(false);
 
-
-  const createTable = api.table.create.useMutation({
-    onSuccess: async (newTable) => {
-      await refetch();
-      setActiveTableId(newTable.id); // Auto-switch to new table
-    },
-  });
-
+  const createTable = api.table.create.useMutation();
+  const utils = api.useUtils();
   const renameTable = api.table.rename.useMutation({
     onSuccess: () => refetch(),
   });
@@ -281,6 +275,7 @@ export default function BasePage() {
           {tables.map((t) => {
             const label = optimisticTableNames[t.id] ?? t.name;
             const isActive = currentTableId === t.id;
+            const isTemp = t.id.startsWith('__temp__');
 
             return (
               <div key={t.id} className="flex items-center">
@@ -293,6 +288,7 @@ export default function BasePage() {
                   }
                 >
                   <span className="truncate">{label}</span>
+                  {isTemp && <span className="ml-2 h-2 w-2 rounded-full bg-gray-400 animate-pulse" />}
 
                   {/* caret lives INSIDE the active tab */}
                   {isActive && (
@@ -344,17 +340,23 @@ export default function BasePage() {
           </button>
         </div>
 
-        {/* Click-away backdrop for either panel */}
-        {(isAddMenuOpen || isStartPanelOpen) && addMenuAnchor &&
+        {/* Click-away backdrop for ANY open panel (Add, Start, Tab menu, Rename) */}
+        {(isAddMenuOpen || isStartPanelOpen || isTabMenuOpen || isRenameOpen) &&
           typeof document !== "undefined" &&
           createPortal(
             <div
-              className="fixed inset-0 z-[49] bg-transparent"
-              onClick={() => { setIsStartPanelOpen(false); setIsAddMenuOpen(false); }}
+              className="fixed inset-0 z-[40] bg-transparent"
+              onClick={() => {
+                setIsAddMenuOpen(false);
+                setIsStartPanelOpen(false);
+                setIsTabMenuOpen(false);
+                setIsRenameOpen(false);
+              }}
             />,
             document.body
           )
         }
+
 
         {isTabMenuOpen && tabMenuAnchor && tabMenuTableId &&
           typeof document !== "undefined" &&
@@ -625,24 +627,47 @@ export default function BasePage() {
                 <button
                   onClick={() => {
                     const name = newTableName.trim() || nextTableName();
-                    setIsCreatingTable(true);
+
+                    // 1) optimistic: add a temp tab + switch to it
+                    const tempId = `__temp__${Date.now()}`;
+                    setTables(prev => [...prev, { id: tempId, name }]);
+                    setActiveTableId(tempId);
+
+                    // close UI immediately
+                    setIsStartPanelOpen(false);
+                    setIsAddMenuOpen(false);
+
+                    // 2) backend create (non-blocking)
                     createTable.mutate(
                       { baseId, name },
                       {
                         onSuccess: async (newTable) => {
-                          await refetch();
+                          await utils.table.getTableById.prefetch({ tableId: newTable.id });
+                          await utils.table.getRows.prefetchInfinite({
+                            tableId: newTable.id,
+                            limit: 50,
+                            search: '',
+                            sort: [],
+                            filters: [],
+                          });
+
+                          // swap temp tab to real id
+                          setTables(prev => prev.map(t => t.id === tempId ? { id: newTable.id, name } : t));
                           setActiveTableId(newTable.id);
-                          setIsCreatingTable(false);
-                          setIsStartPanelOpen(false);
-                          setIsAddMenuOpen(false);
+
+                          // optional: quietly sync base in the background
+                          // await refetch();
                         },
                         onError: (err) => {
+                          // rollback: remove temp tab; restore previous active if needed
+                          setTables(prev => prev.filter(t => t.id !== tempId));
+                          // you could setActiveTableId(tables[0]?.id ?? null) if you want
                           alert('Failed to create table: ' + err.message);
-                          setIsCreatingTable(false);
                         },
                       }
                     );
                   }}
+
                   className="px-4 py-2 rounded-md text-sm text-white bg-blue-600 hover:bg-blue-700"
                 >
                   Save
@@ -656,7 +681,32 @@ export default function BasePage() {
 
 
         {/* Render selected table in full */}
-        {currentTableId ? <TablePage tableId={currentTableId} /> : <p className="text-gray-500 pl-5 pt-5">No table selected :(</p>}
+        {currentTableId ? (
+          String(currentTableId).startsWith('__temp__') ? (
+            // Lightweight Airtable-ish skeleton while backend creates the table
+            <div className="p-6">
+              <div className="mb-3 h-6 w-40 rounded bg-gray-200 animate-pulse" />
+              <div className="grid grid-cols-4 gap-2">
+                {Array.from({ length: 4 }).map((_, c) => (
+                  <div key={c} className="rounded border border-gray-200">
+                    <div className="h-8 border-b border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-500">Column {c + 1}</div>
+                    {Array.from({ length: 5 }).map((__, r) => (
+                      <div key={r} className="h-10 px-3 py-2">
+                        <div className="h-3 w-24 rounded bg-gray-200 animate-pulse" />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 text-sm text-gray-500">Creating table…</div>
+            </div>
+          ) : (
+            <TablePage tableId={currentTableId} />
+          )
+        ) : (
+          <p className="text-gray-500 pl-5 pt-5">No table selected :(</p>
+        )}
+
 
       </div>
 

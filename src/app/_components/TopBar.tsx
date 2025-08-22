@@ -44,6 +44,8 @@ export default function TopBar({
   addFakeRows,
   tableId,
   onOpenSort,
+  sort,
+  setSort,
   
 }: TopBarProps) {
   const [showColumnPopover, setShowColumnPopover] = useState(false);
@@ -52,7 +54,7 @@ export default function TopBar({
   const filterButtonRef = useRef<HTMLDivElement>(null);   
   const [showSortPopover, setShowSortPopover] = useState(false);
   const sortButtonRef = useRef<HTMLDivElement>(null);
-  const [sort, setSort] = useState<SortItem[]>([]);
+  // const [sort, setSort] = useState<SortItem[]>([]);
   const [showSearchInput, setShowSearchInput] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const closeSearch = () => setShowSearchInput(false);

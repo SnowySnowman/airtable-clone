@@ -54,6 +54,62 @@ function nextAutoName(type: FieldType, existingLower: Set<string>) {
   return `${base}${i}`;
 }
 
+function GridSkeleton() {
+  return (
+    <div className="h-full bg-white flex flex-col overflow-hidden">
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left views panel */}
+        <div className="w-64 border-r border-t border-gray-300 p-4 space-y-3">
+          <div className="h-6 w-28 rounded bg-gray-200" />
+          <div className="h-8 w-full rounded bg-gray-100" />
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-7 rounded bg-gray-100" />
+            ))}
+          </div>
+        </div>
+
+        {/* Grid area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="border-t border-gray-300 flex-1 overflow-auto bg-gray-100">
+            <div className="min-w-[720px]">
+              {/* header */}
+              <div className="sticky top-0 z-20 bg-white flex border-b border-gray-200">
+                <div className="w-12 min-w-[48px] bg-gray-50 flex items-center justify-center text-xs text-gray-500">#</div>
+                <div className="w-60 bg-gray-50 px-3 py-2 text-xs text-gray-500 relative
+                                after:content-[''] after:absolute after:top-0 after:right-[-8px] after:w-8 after:h-full
+                                after:bg-gradient-to-r after:from-gray-300/50 after:to-transparent">
+                  <div className="h-3 w-24 rounded bg-gray-200" />
+                </div>
+                <div className="w-60 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                  <div className="h-3 w-16 rounded bg-gray-200" />
+                </div>
+                <div className="flex-1 bg-gray-50" />
+              </div>
+
+              {/* a few rows */}
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex border-b border-gray-200 bg-white">
+                  <div className="w-12 min-w-[48px] flex items-center justify-center text-sm text-gray-500">{i + 1}</div>
+                  <div className="w-60 px-3 py-2"><div className="h-3 w-40 rounded bg-gray-200 animate-pulse" /></div>
+                  <div className="w-60 px-3 py-2"><div className="h-3 w-10 rounded bg-gray-200 animate-pulse" /></div>
+                  <div className="flex-1" />
+                </div>
+              ))}
+
+              {/* add-row line */}
+              <div className="flex">
+                <div className="w-12 min-w-[48px] px-3 py-2 text-gray-500">+</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 
 export default function TablePage({ tableId }: { tableId: string }) {
   const [rowCount, setRowCount] = useState(0);
@@ -356,12 +412,14 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
       tableId,
       limit: 50,
       search: debouncedSearch,
-      sort,
+      sort: debouncedSort, 
       filters,
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
       refetchOnWindowFocus: false,
+
+      placeholderData: (prev) => prev,
       staleTime: 30_000,         // serve cached pages for 30s
       gcTime: 5 * 60_000,        // keep them in memory for 5 minutes
     }
@@ -468,6 +526,31 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
 
   return [...all, ...optimisticRows];
 }, [data, optimisticRows]);
+
+  // helper — put near other small helpers
+  const colTypeById = useMemo(
+    () => Object.fromEntries((table?.columns ?? []).map(c => [c.id, c.type])),
+    [table?.columns]
+  );
+
+  function compareBySpec(a: any, b: any, spec: { columnId: string; order: 'asc'|'desc' }[]) {
+    for (const { columnId, order } of spec) {
+      const av = a[columnId], bv = b[columnId];
+      const type = colTypeById[columnId] ?? 'TEXT';
+      let cmp = 0;
+      if (type === 'NUMBER') cmp = (Number(av) || 0) - (Number(bv) || 0);
+      else                   cmp = String(av ?? '').localeCompare(String(bv ?? ''), undefined, { sensitivity: 'base' });
+      if (cmp !== 0) return order === 'asc' ? cmp : -cmp;
+    }
+    return 0;
+  }
+
+  // right after your existing flatRows useMemo
+  const uiRows = useMemo(
+    () => (sort.length ? [...flatRows].sort((a,b) => compareBySpec(a,b,sort)) : flatRows),
+    [flatRows, sort, colTypeById]
+  );
+
   
   console.log("DEBUG flatRows:", flatRows);
 
@@ -778,7 +861,7 @@ function handleAddRow() {
 
 
 const tableInstance = useReactTable({
-  data: flatRows,
+  data: uiRows,
   columns,
   state: {
     columnVisibility, // Track visibility
@@ -805,7 +888,10 @@ const tableInstance = useReactTable({
   
 
   // if (isLoading) return <p className="p-4">Loading table...</p>;
-  if (isLoading || !table?.columns?.length) return <p className="p-4">Loading table...</p>;
+  // if (isLoading || !table?.columns?.length) return <GridSkeleton />;
+  if ((isLoading && !data?.pages?.length) || !table?.columns?.length) {
+    return <GridSkeleton />;
+  }
   if (!table) return <p className="p-4">Table not found.</p>;
 
   
@@ -839,6 +925,11 @@ const tableInstance = useReactTable({
           columns={table?.columns ?? []}
           sort={sort}
           setSort={setSort}
+          onApply={(next) => {
+            setSort(next);            // UI reorders immediately (client sort above)
+            setShowSortEditor(false);
+            saveCurrentViewConfig();  // persist (your existing call)
+          }}
           onClose={() => {
             setShowSortEditor(false);
             saveCurrentViewConfig();   // ← push the new sort up in one atomic call
