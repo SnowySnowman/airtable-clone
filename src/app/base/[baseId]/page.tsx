@@ -271,7 +271,7 @@ export default function BasePage() {
 
 
         {/* Airtable-style table tab bar */}
-        <div className="px-4 pt-2 border-b border-gray-200 flex items-center gap-2 overflow-x-auto bg-[#fbf5e1]">
+        <div className="px-4 border-b border-gray-200 flex items-center gap-2 overflow-x-auto bg-[#fbf5e1]">
           {tables.map((t) => {
             const label = optimisticTableNames[t.id] ?? t.name;
             const isActive = currentTableId === t.id;
@@ -284,7 +284,7 @@ export default function BasePage() {
                   className={
                     isActive
                       ? "flex items-center gap-1 pl-3 pr-1 py-1.5 rounded-t-md text-sm bg-white border border-gray-200 border-b-white text-black"
-                      : "px-3 py-1.5 rounded-md text-sm text-gray-700 hover:bg-gray-100"
+                      : "px-3 py-1 rounded-md text-sm text-gray-700 hover:bg-yellow-300 cursor-pointer"
                   }
                 >
                   <span className="truncate">{label}</span>
