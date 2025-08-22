@@ -28,7 +28,7 @@ interface TopBarProps {
   tableId: string;
   sort: SortItem[];
   setSort: React.Dispatch<React.SetStateAction<SortItem[]>>;
-  onOpenSort: () => void;
+  onOpenSort: (anchor: DOMRect) => void;
 }
 
 export default function TopBar({
@@ -221,8 +221,7 @@ export default function TopBar({
         {/* Sort button with popover */}
         <div className="relative" ref={sortButtonRef}>
           <button
-            // onClick={() => setShowSortPopover((prev) => !prev)}
-            onClick={onOpenSort} 
+            onClick={(e) => onOpenSort((e.currentTarget as HTMLElement).getBoundingClientRect())}
             className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">

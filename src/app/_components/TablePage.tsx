@@ -161,9 +161,8 @@ export default function TablePage({ tableId }: { tableId: string }) {
 //   const [sortConfig, setSortConfig] = useState<{ columnId: string; order: "asc" | "desc" } | undefined>(undefined);
   const [sortConfig, setSortConfig] = useState<typeof sort>([]);
   const [viewSavedMessage, setViewSavedMessage] = useState<string | null>(null);
-
-
-
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const [sortAnchor, setSortAnchor] = useState<DOMRect | null>(null);
   const [addingRows, setAddingRows] = useState(false);
 
   // const { data: table, isLoading, refetch } = api.table.getTableById.useQuery({ tableId });
@@ -915,8 +914,60 @@ const tableInstance = useReactTable({
         tableId={tableId}
         sort={sort}
         setSort={setSort}
-        onOpenSort={() => setShowSortEditor(true)}
+        onOpenSort={(anchor) => { setSortAnchor(anchor); setIsSortOpen(true); }}
       />
+
+      {isSortOpen && sortAnchor && typeof document !== 'undefined' &&
+        createPortal(
+          <>
+            {/* click-away backdrop */}
+            <div
+              className="fixed inset-0 z-[199] bg-transparent"
+              onClick={() => {
+                setIsSortOpen(false);
+                saveCurrentViewConfig();
+              }}
+            />
+            {/* anchor: below button; align right edge */}
+            <div
+              className="fixed z-[200]"
+              style={{ top: sortAnchor.bottom + 8, left: sortAnchor.right }}
+            >
+              <div className="-translate-x-full">
+                {sort.length > 0 ? (
+                  <GlobalSortEditor
+                    tableId={tableId}
+                    viewName={selectedView?.name ?? ""}
+                    columns={table?.columns ?? []}
+                    sort={sort}
+                    setSort={setSort}
+                    onClose={() => {
+                      setIsSortOpen(false);
+                      saveCurrentViewConfig();
+                    }}
+                  />
+                ) : (
+                  <GlobalSortPopover
+                    tableId={tableId}
+                    viewName={selectedView?.name ?? ""}
+                    columns={(table?.columns ?? []).map(c => ({
+                      id: c.id, name: c.name, type: c.type as "TEXT" | "NUMBER"
+                    }))}
+                    sort={sort}
+                    setSort={setSort}
+                    onClose={() => {
+                      setIsSortOpen(false);
+                      saveCurrentViewConfig();
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          </>,
+          document.body
+        )
+      }
+
 
       {showSortEditor && (
         <GlobalSortEditor

@@ -85,9 +85,10 @@ const GlobalSortEditor: React.FC<Props> = ({
 
   return (
     <div
-      className="w-[460px] bg-white border border-gray-200 rounded shadow-lg p-4 space-y-4 absolute z-[9999] top-[157px] right-20"
+      className="w-[460px] bg-white border border-gray-200 rounded shadow-lg p-4 space-y-4" 
       ref={ref}
     >
+      
       {/* Header */}
       <div className="text-xs text-gray-500 font-medium">Sort by</div>
       <div className="border-t border-gray-200 -mt-2" />
