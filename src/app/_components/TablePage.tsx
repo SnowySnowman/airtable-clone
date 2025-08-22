@@ -160,7 +160,7 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const [viewName, setViewName] = useState("");
 //   const [sortConfig, setSortConfig] = useState<{ columnId: string; order: "asc" | "desc" } | undefined>(undefined);
   const [sortConfig, setSortConfig] = useState<typeof sort>([]);
-  const [viewSavedMessage, setViewSavedMessage] = useState<string | null>(null);
+  // const [viewSavedMessage, setViewSavedMessage] = useState<string | null>(null);
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [sortAnchor, setSortAnchor] = useState<DOMRect | null>(null);
   const [addingRows, setAddingRows] = useState(false);
@@ -316,18 +316,16 @@ export default function TablePage({ tableId }: { tableId: string }) {
   const utils = api.useUtils();
 
   const saveView = api.table.saveView.useMutation({
-  onSuccess: async () => {
-    setViewSavedMessage("✅ View saved successfully!");
-    await utils.table.getViews.invalidate({ tableId });
-
-    // Auto-hide the message after 3 seconds
-    setTimeout(() => setViewSavedMessage(null), 3000);
-  },
-  onError: () => {
-    setViewSavedMessage("❌ Failed to save view. Please try again.");
-    setTimeout(() => setViewSavedMessage(null), 3000);
-  }
-});
+    onSuccess: async () => {
+      // setViewSavedMessage("✅ View saved successfully!");  // ← keep removed
+      await utils.table.getViews.invalidate({ tableId });
+      // setTimeout(() => setViewSavedMessage(null), 3000);    // ← keep removed
+    },
+    onError: () => {
+      // setViewSavedMessage("❌ Failed to save view. Please try again."); // optional: remove if you don't want error banners either
+      // setTimeout(() => setViewSavedMessage(null), 3000);
+    }
+  });
 
 const [hoveredView, setHoveredView] = useState<string | null>(null);
 
@@ -1099,11 +1097,11 @@ const tableInstance = useReactTable({
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="border-t border-gray-300 flex-1 flex flex-col overflow-hidden">
 
-              {viewSavedMessage && (
+              {/* {viewSavedMessage && (
                 <div className="mb-4 px-4 py-2 bg-green-100 border border-green-400 text-green-700 rounded shadow">
                   {viewSavedMessage}
                 </div>
-              )}
+              )} */}
 
 
               <div className="flex flex-wrap items-center gap-2">
