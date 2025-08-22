@@ -350,10 +350,7 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
 
 
   const {
-    data,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
+    data, fetchNextPage, hasNextPage, isFetchingNextPage,
   } = api.table.getRows.useInfiniteQuery(
     {
       tableId,
@@ -365,8 +362,11 @@ const [hoveredView, setHoveredView] = useState<string | null>(null);
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
       refetchOnWindowFocus: false,
+      staleTime: 30_000,         // serve cached pages for 30s
+      gcTime: 5 * 60_000,        // keep them in memory for 5 minutes
     }
   );
+
 
   useEffect(() => {
   if (!data?.pages?.length) {
@@ -798,7 +798,7 @@ const tableInstance = useReactTable({
     const last = virtualRows.at(-1);
     if (!last) return;
 
-    if (last.index >= flatRows.length - 10 && hasNextPage && !isFetchingNextPage) {
+    if (last.index >= flatRows.length - 30 && hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
   }, [virtualRows, flatRows.length, hasNextPage, isFetchingNextPage]);

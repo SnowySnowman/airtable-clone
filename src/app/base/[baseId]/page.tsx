@@ -6,6 +6,7 @@ import { api } from "~/trpc/react";
 import Link from "next/link";
 import TablePage from "~/app/_components/TablePage";
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 export default function BasePage() {
   const router = useRouter();
@@ -62,6 +63,35 @@ export default function BasePage() {
     "#c02c40", "#bc4f22", "#edbc44", "#46872b", "#7adad4", "#7cc8f9", "#496ed9", "#c22fa3", "#773fe5", "#773fe5",
     "#894a5a", "#85513c", "#946a29", "#946a29", "#457d78", "#487b9f", "#4b649b", "#7e4475", "#5f4b88", "#5f4b88",
   ];
+
+  // Add/import UI state
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [addMenuAnchor, setAddMenuAnchor] = useState<DOMRect | null>(null);
+
+  // “Start from scratch” panel
+  const [isStartPanelOpen, setIsStartPanelOpen] = useState(false);
+  const [newTableName, setNewTableName] = useState('');
+
+  // Compute "Table {N}" that doesn't clash with existing names
+  function nextTableName() {
+    const taken = new Set((tables ?? []).map(t => (t.name || '').trim()));
+    let n = 1;
+    while (taken.has(`Table ${n}`)) n++;
+    return `Table ${n}`;
+  }
+
+  // Tab menu (per-table)
+  const [isTabMenuOpen, setIsTabMenuOpen] = useState(false);
+  const [tabMenuAnchor, setTabMenuAnchor] = useState<DOMRect | null>(null);
+  const [tabMenuTableId, setTabMenuTableId] = useState<string | null>(null);
+
+  // Rename popover
+  const [isRenameOpen, setIsRenameOpen] = useState(false);
+  const [renameAnchor, setRenameAnchor] = useState<DOMRect | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  // Optional optimistic overlay for table names
+  const [optimisticTableNames, setOptimisticTableNames] = useState<Record<string, string>>({});
 
 
 
@@ -247,79 +277,354 @@ export default function BasePage() {
 
 
         {/* Airtable-style table tab bar */}
-        <div className="m-0 p-0 border-b border-gray-300 bg-[#fefbee] px-4">
-          <div className="flex h-10 space-x-1">
-            {tables.map((table) => {
-              const isActive = table.id === currentTableId;
-              return (
-                <div key={table.id} className="relative flex items-center">
-                  <button
-                    onClick={() => setActiveTableId(table.id)}
-                    className={`h-full flex items-center px-3 py-1.5 rounded-t-md rounded-b-none border text-sm font-medium cursor-pointer ${
-                      isActive
-                        ? "z-10 bg-white text-black border-x border-t border-gray-300 border-b-0 -mb-px"
-                        : "bg-[#f5f5f5] text-gray-700 hover:bg-gray-200 border-transparent"
-                    }`}
-                  >
-                    <span className="truncate max-w-[120px]">{table.name}</span>
-                    <svg
+        <div className="px-4 pt-2 border-b border-gray-200 flex items-center gap-2 overflow-x-auto bg-[#fbf5e1]">
+          {tables.map((t) => {
+            const label = optimisticTableNames[t.id] ?? t.name;
+            const isActive = currentTableId === t.id;
+
+            return (
+              <div key={t.id} className="flex items-center">
+                <button
+                  onClick={() => setActiveTableId(t.id)}
+                  className={
+                    isActive
+                      ? "flex items-center gap-1 pl-3 pr-1 py-1.5 rounded-t-md text-sm bg-white border border-gray-200 border-b-white text-black"
+                      : "px-3 py-1.5 rounded-md text-sm text-gray-700 hover:bg-gray-100"
+                  }
+                >
+                  <span className="truncate">{label}</span>
+
+                  {/* caret lives INSIDE the active tab */}
+                  {isActive && (
+                    <span
+                      role="button"
+                      aria-label="Table menu"
+                      tabIndex={0}
                       onClick={(e) => {
+                        e.preventDefault();
                         e.stopPropagation();
-                        setOpenDropdown(openDropdown === table.id ? null : table.id);
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setTabMenuAnchor(rect);
+                        setTabMenuTableId(t.id);
+                        setIsTabMenuOpen(true);
                       }}
-                      className="ml-1 w-3 h-3 text-gray-500 hover:text-black cursor-pointer"
-                      viewBox="0 0 16 16"
-                      fill="none"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLElement).click();
+                        }
+                      }}
+                      className="ml-1 inline-flex items-center justify-center rounded hover:bg-gray-100 px-1 py-0.5 text-gray-500 hover:text-gray-800"
                     >
-                      <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="1.5" />
-                    </svg>
-                  </button>
-
-                  {/* Dropdown menu */}
-                  {openDropdown === table.id && (
-                    <div className="absolute right-0 top-full mt-1 bg-white border rounded shadow z-10">
-                      <button
-                        onClick={() => {
-                          const newName = prompt("Rename table", table.name);
-                          if (newName) {
-                            renameTable.mutate({ tableId: table.id, name: newName });
-                          }
-                          setOpenDropdown(null);
-                        }}
-                        className="block w-full px-4 py-2 text-left hover:bg-gray-100"
-                      >
-                        📝 Rename
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (table.id && confirm("Delete this table?")) {
-                            deleteTable.mutate({ tableId: table.id });
-                          }
-                          setOpenDropdown(null);
-                        }}
-                        className="block w-full px-4 py-2 text-left hover:bg-red-100 text-red-600"
-                      >
-                        🗑️ Delete
-                      </button>
-                    </div>
+                      <svg className="w-4 h-4" viewBox="0 0 16 16">
+                        <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                      </svg>
+                    </span>
                   )}
-                </div>
-              );
-            })}
+                </button>
+                {/* optional: a slim separator between tabs */}
+                {!isActive && <span className="mx-1 text-gray-300">|</span>}
+              </div>
+            );
+          })}
 
-            {/* Add or import button */}
-            {isCreatingTable ? (
+
+
+          {/* Add or import (anchor button only; the panels are portaled below) */}
+          <button
+            onClick={(e) => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              setAddMenuAnchor(rect);
+              setIsAddMenuOpen(true);
+              setIsStartPanelOpen(false);
+            }}
+            className="ml-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer"
+          >
+            + Add or import
+          </button>
+        </div>
+
+        {/* Click-away backdrop for either panel */}
+        {(isAddMenuOpen || isStartPanelOpen) && addMenuAnchor &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div
+              className="fixed inset-0 z-[49] bg-transparent"
+              onClick={() => { setIsStartPanelOpen(false); setIsAddMenuOpen(false); }}
+            />,
+            document.body
+          )
+        }
+
+        {isTabMenuOpen && tabMenuAnchor && tabMenuTableId &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div
+              className="fixed z-[70] w-[340px] rounded-xl border border-gray-200 bg-white shadow-[0_12px_32px_rgba(16,24,40,0.12)]"
+              style={{ top: tabMenuAnchor.bottom + 6, left: tabMenuAnchor.left }}
+            >
+              <div className="py-1">
+                <button
+                  onClick={(e) => {
+                    // open rename popover anchored to the same tab
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setIsTabMenuOpen(false);
+                    setIsRenameOpen(true);
+                    setRenameAnchor(tabMenuAnchor); // anchor to the tab, not the item
+                    const t = tables.find(tt => tt.id === tabMenuTableId);
+                    setRenameValue(t?.name ?? "");
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
+                >
+                  <svg className="w-4 h-4 opacity-80" viewBox="0 0 24 24"><use href="/icons/icon_definitions.svg#Pencil"/></svg>
+                  Rename table
+                </button>
+
+                {/* the rest mirror Airtable but are disabled */}
+                {[
+                  'Hide table','Manage fields','Duplicate table',
+                  'Configure date dependencies','Edit table description',
+                  'Edit table permissions','Clear data'
+                ].map(label => (
+                  <button
+                    key={label}
+                    disabled
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 cursor-not-allowed"
+                    title="Disabled in this build"
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <svg className="w-4 h-4 opacity-60"><use href="/icons/icon_definitions.svg#DotsThree"/></svg>
+                      {label}
+                    </span>
+                  </button>
+                ))}
+
+                {/* ENABLED: Delete table (optimistic) */}
+                <button
+                  onClick={() => {
+                    if (!tabMenuTableId) return;
+                    const id = tabMenuTableId;
+
+                    // snapshot for rollback
+                    const prevTables = tables;
+                    const prevActive = currentTableId;
+
+                    // compute next active (first table that isn't the one we’re deleting)
+                    const nextActive = prevTables.find(t => t.id !== id)?.id ?? null;
+
+                    // close the menu
+                    setIsTabMenuOpen(false);
+                    setIsRenameOpen(false);
+
+                    // optimistic UI: remove tab immediately
+                    setTables(prev => prev.filter(t => t.id !== id));
+                    if (prevActive === id) setActiveTableId(nextActive);
+
+                    // fire backend delete
+                    deleteTable.mutate(
+                      { tableId: id },
+                      {
+                        onSuccess: async () => {
+                          await refetch();
+                        },
+                        onError: (err) => {
+                          // rollback on error
+                          setTables(prevTables);
+                          setActiveTableId(prevActive);
+                          alert('Failed to delete table: ' + err.message);
+                        },
+                      }
+                    );
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 hover:text-red-700"
+                >
+                  <svg className="w-4 h-4"><use href="/icons/icon_definitions.svg#Trash"/></svg>
+                  Delete table
+                </button>
+
+              </div>
+            </div>,
+            document.body
+          )
+        }
+
+        {isRenameOpen && renameAnchor && tabMenuTableId &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div
+              className="fixed z-[80] w-[360px] rounded-xl border border-gray-200 bg-white shadow-[0_12px_32px_rgba(16,24,40,0.12)] p-4"
+              style={{ top: renameAnchor.bottom + 8, left: renameAnchor.left }}
+            >
+              <div className="mb-3">
+                <input
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  autoFocus
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                />
+              </div>
+
+              <div className="mb-2 text-sm text-gray-700">What should each record be called?</div>
               <button
                 disabled
-                className="ml-2 px-3 py-1.5 text-sm bg-gray-400 text-white rounded-md cursor-wait"
+                className="w-full inline-flex items-center justify-between rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-500 cursor-not-allowed"
               >
-                Creating...
+                <span className="inline-flex items-center gap-2">
+                  <svg className="h-4 w-4 opacity-70"><use href="/icons/icon_definitions.svg#TextAa"/></svg>
+                  Record
+                </span>
+                <svg className="h-4 w-4 opacity-70"><use href="/icons/icon_definitions.svg#CaretDown"/></svg>
               </button>
-            ) : (
+
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => { setIsRenameOpen(false); }}
+                  className="px-3 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    const id = tabMenuTableId;
+                    const name = (renameValue || "").trim();
+                    if (!id || !name) return;
+
+                    // Optimistic UI: update tab label immediately
+                    setOptimisticTableNames(prev => ({ ...prev, [id]: name }));
+                    setTables(prev => prev.map(t => t.id === id ? { ...t, name } : t));
+
+                    setIsRenameOpen(false);
+
+                    // Backend rename
+                    renameTable.mutate(
+                      { tableId: id, name },
+                      {
+                        onSuccess: async () => {
+                          await refetch();
+                          setOptimisticTableNames(prev => { const m = { ...prev }; delete m[id]; return m; });
+                        },
+                        onError: async (err) => {
+                          // Roll back optimistic label
+                          setOptimisticTableNames(prev => { const m = { ...prev }; delete m[id]; return m; });
+                          await refetch();
+                          alert('Failed to rename table: ' + err.message);
+                        }
+                      }
+                    );
+                  }}
+                  className="px-4 py-2 rounded-md text-sm text-white bg-blue-600 hover:bg-blue-700"
+                >
+                  Save
+                </button>
+              </div>
+            </div>,
+            document.body
+          )
+        }
+
+
+
+        {/* /* Main Add/import dropdown (portaled & fixed) */}
+        {isAddMenuOpen && addMenuAnchor &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div
+              className="fixed z-[50] w-72 rounded-xl border border-gray-200 bg-white shadow-[0_12px_32px_rgba(16,24,40,0.12)]"
+              style={{ top: addMenuAnchor.bottom + 6, left: addMenuAnchor.left }}
+            >
+              <div className="py-2">
+                <div className="px-3 py-2 text-xs font-semibold text-gray-500">Add a blank table</div>
+
+                <button
+                  disabled
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 cursor-not-allowed"
+                  title="Disabled in this build"
+                >
+                  <svg className="w-4 h-4"><use href="/icons/icon_definitions.svg#Sparkles" /></svg>
+                  Create with AI
+                </button>
+
+                <button
+                  // AFTER
+                  onClick={() => {
+                    setIsAddMenuOpen(false);
+                    setIsStartPanelOpen(true);
+                    setNewTableName(nextTableName());
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
+                >
+                  <svg className="w-4 h-4"><use href="/icons/icon_definitions.svg#DocumentAdd" /></svg>
+                  Start from scratch
+                </button>
+
+                <div className="my-2 border-t border-gray-200" />
+                <div className="px-3 py-2 text-xs font-semibold text-gray-500">Add from other sources</div>
+
+                {[
+                  { label: 'Airtable base' }, { label: 'CSV file' },
+                  { label: 'Google Calendar' }, { label: 'Google Sheets' },
+                  { label: 'Microsoft Excel' }, { label: 'Salesforce' },
+                  { label: 'Smartsheet' }, { label: '25 more sources…' },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    disabled
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-gray-400 cursor-not-allowed"
+                    title="Disabled in this build"
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <svg className="w-4 h-4 opacity-60"><use href="/icons/icon_definitions.svg#LinkExternal" /></svg>
+                      {item.label}
+                    </span>
+                    <span className="text-[10px] rounded-full bg-gray-100 text-gray-500 px-2 py-0.5">Disabled</span>
+                  </button>
+                ))}
+              </div>
+            </div>,
+            document.body
+          )
+        }
+
+        {/* /* Naming popover (portaled & fixed), aligned to the same button */}
+        {isStartPanelOpen && addMenuAnchor &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div
+              className="fixed z-[60] w-[360px] rounded-xl border border-gray-200 bg-white shadow-[0_12px_32px_rgba(16,24,40,0.12)] p-4"
+              style={{ top: addMenuAnchor.bottom + 10, left: addMenuAnchor.left }}
+            >
+              <div className="mb-3">
+                <input
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                  value={newTableName}
+                  onChange={(e) => setNewTableName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              <div className="mb-2 text-sm text-gray-700">What should each record be called?</div>
               <button
-                onClick={() => {
-                  const name = prompt("New table name?");
-                  if (name) {
+                disabled
+                className="w-full inline-flex items-center justify-between rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-500 cursor-not-allowed"
+                title="Non-functional in this mock"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <svg className="h-4 w-4 opacity-70"><use href="/icons/icon_definitions.svg#TextAa" /></svg>
+                  Record
+                </span>
+                <svg className="h-4 w-4 opacity-70"><use href="/icons/icon_definitions.svg#CaretDown" /></svg>
+              </button>
+
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => { setIsStartPanelOpen(false); setIsAddMenuOpen(false); }}
+                  className="px-3 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    const name = newTableName.trim() || nextTableName();
                     setIsCreatingTable(true);
                     createTable.mutate(
                       { baseId, name },
@@ -328,22 +633,26 @@ export default function BasePage() {
                           await refetch();
                           setActiveTableId(newTable.id);
                           setIsCreatingTable(false);
+                          setIsStartPanelOpen(false);
+                          setIsAddMenuOpen(false);
                         },
                         onError: (err) => {
-                          alert("Failed to create table: " + err.message);
+                          alert('Failed to create table: ' + err.message);
                           setIsCreatingTable(false);
                         },
                       }
                     );
-                  }
-                }}
-                className="ml-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer"
-              >
-                + Add or import
-              </button>
-            )}
-          </div>
-        </div>
+                  }}
+                  className="px-4 py-2 rounded-md text-sm text-white bg-blue-600 hover:bg-blue-700"
+                >
+                  Save
+                </button>
+              </div>
+            </div>,
+            document.body
+          )
+        }
+
 
 
         {/* Render selected table in full */}
